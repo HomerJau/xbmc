@@ -63,7 +63,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   std::vector<std::string> artistsort;
   std::vector<std::string> tagdata;
   std::vector<std::string> separators{" feat. ", " ft. ", " Feat. ", " Ft. ",  ";", ":",
-                                      "|",       "#",     "/",       " with ", "&"};
+                                      "|",       "#",     "/", " with "};
   const std::string musicsep =
       CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_musicItemSeparator;
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
@@ -105,7 +105,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       // part_number is the matroska spec key
       if (key == "TRACK" || key == "PART_NUMBER")
         albumtag.SetDiscNumber(std::stoi(tag->value));
-      else if (key == "SUBTITLE" || key == "SETSUBTITLE")
+      else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
         albumtag.SetDiscSubtitle(tag->value);
       else if (key == "TITLE")
         albumtag.SetAlbum(tag->value);
@@ -168,6 +168,8 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
         tagdata = StringUtils::Split(tag->value, ",");
         AddCommaDelimitedString(tagdata, separators, albumtag);
       }
+      else if (key == "DISC")
+        albumtag.SetDiscNumber(std::stoi(tag->value));
       else if (key == "REMIXED_BY")
         albumtag.AddArtistRole("Remixer", tag->value);
       else if (key == "MIXED_BY" || key == "MIXER")
@@ -218,7 +220,13 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     {
       switch (par_profile)
       {
-        case FF_PROFILE_DTS_HD_MA_X:
+        case FF_PROFILE_DTS_HD_MA:
+          codec_name = "dtshd_ma";
+          break;
+		case FF_PROFILE_DTS_96_24:
+          codec_name = "dts_96_24";
+          break;
+		case FF_PROFILE_DTS_HD_MA_X:
           codec_name = "dtshd_ma_x";
           break;
         case FF_PROFILE_DTS_HD_MA_X_IMAX:
@@ -227,17 +235,11 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
         case FF_PROFILE_DTS_ES:
           codec_name = "dts_es";
           break;
-        case FF_PROFILE_DTS_96_24:
-          codec_name = "dts_96_24";
-          break;
         case FF_PROFILE_DTS_HD_HRA:
           codec_name = "dtshd_hra";
           break;
         case FF_PROFILE_DTS_EXPRESS:
           codec_name = "dts_express";
-          break;
-        case FF_PROFILE_DTS_HD_MA:
-          codec_name = "dtshd_ma";
           break;
         default:
           codec_name = "dca";
@@ -254,6 +256,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 
   std::string thumb;
 
+  // Chaned to > 0 in QQ Kodi 7 (testing)
   if (m_fctx->nb_chapters > 1)
     thumb = CTextureUtils::GetWrappedImageURL(url.Get(), "music");
 
@@ -370,8 +373,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
           addRole("Remixer", tag->value);
         else if (key == "MIXED_BY" || key == "MIXER"  )
           addRole("Mixer", tag->value);
-        else if (key == "SUBTITLE" || key == "SETSUBTITLE")
+        else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
           item->GetMusicInfoTag()->SetDiscSubtitle(tag->value);
+        else if (key == "DISC")
+		  item->GetMusicInfoTag()->SetDiscNumber(std::stoi(tag->value));
         else if (key == "COMMENT")
           item->GetMusicInfoTag()->SetComment(tag->value);
         else if (key == "MOOD")
