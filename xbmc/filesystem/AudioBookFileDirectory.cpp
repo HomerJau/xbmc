@@ -63,7 +63,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   std::vector<std::string> artistsort;
   std::vector<std::string> tagdata;
   std::vector<std::string> separators{" feat. ", " ft. ", " Feat. ", " Ft. ",  ";", ":",
-                                      "|",       "#",     "/"};
+                                      "|",       "#",     "/", " with "};
   const std::string musicsep =
       CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_musicItemSeparator;
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
@@ -220,7 +220,13 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     {
       switch (par_profile)
       {
-        case FF_PROFILE_DTS_HD_MA_X:
+        case FF_PROFILE_DTS_HD_MA:
+          codec_name = "dtshd_ma";
+          break;
+		case FF_PROFILE_DTS_96_24:
+          codec_name = "dts_96_24";
+          break;
+		case FF_PROFILE_DTS_HD_MA_X:
           codec_name = "dtshd_ma_x";
           break;
         case FF_PROFILE_DTS_HD_MA_X_IMAX:
@@ -229,17 +235,11 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
         case FF_PROFILE_DTS_ES:
           codec_name = "dts_es";
           break;
-        case FF_PROFILE_DTS_96_24:
-          codec_name = "dts_96_24";
-          break;
         case FF_PROFILE_DTS_HD_HRA:
           codec_name = "dtshd_hra";
           break;
         case FF_PROFILE_DTS_EXPRESS:
           codec_name = "dts_express";
-          break;
-        case FF_PROFILE_DTS_HD_MA:
-          codec_name = "dtshd_ma";
           break;
         default:
           codec_name = "dca";
