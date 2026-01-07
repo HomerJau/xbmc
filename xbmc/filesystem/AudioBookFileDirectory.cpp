@@ -169,7 +169,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
         AddCommaDelimitedString(tagdata, separators, albumtag);
       }
       else if (key == "DISC")
-        albumtag.SetDiscNumber(tag->value);
+        albumtag.SetDiscNumber(std::stoi(tag->value));
       else if (key == "REMIXED_BY")
         albumtag.AddArtistRole("Remixer", tag->value);
       else if (key == "MIXED_BY" || key == "MIXER")
@@ -375,7 +375,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
         else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
           item->GetMusicInfoTag()->SetDiscSubtitle(tag->value);
         else if (key == "DISC")
-		  item->GetMusicInfoTag()->SetDiscNumber(tag->value);
+		  item->GetMusicInfoTag()->SetDiscNumber(std::stoi(tag->value));
         else if (key == "COMMENT")
           item->GetMusicInfoTag()->SetComment(tag->value);
         else if (key == "MOOD")
