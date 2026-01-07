@@ -63,7 +63,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   std::vector<std::string> artistsort;
   std::vector<std::string> tagdata;
   std::vector<std::string> separators{" feat. ", " ft. ", " Feat. ", " Ft. ",  ";", ":",
-                                      "|",       "#",     "/",       " with "};
+                                      "|",       "#",     "/"};
   const std::string musicsep =
       CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_musicItemSeparator;
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
@@ -105,7 +105,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       // part_number is the matroska spec key
       if (key == "TRACK" || key == "PART_NUMBER")
         albumtag.SetDiscNumber(std::stoi(tag->value));
-      else if (key == "SUBTITLE" || key == "SETSUBTITLE")
+      else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
         albumtag.SetDiscSubtitle(tag->value);
       else if (key == "TITLE")
         albumtag.SetAlbum(tag->value);
@@ -168,6 +168,8 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
         tagdata = StringUtils::Split(tag->value, ",");
         AddCommaDelimitedString(tagdata, separators, albumtag);
       }
+      else if (key == "DISC")
+        tag.SetDiscNumber(tag->value);
       else if (key == "REMIXED_BY")
         albumtag.AddArtistRole("Remixer", tag->value);
       else if (key == "MIXED_BY" || key == "MIXER")
@@ -370,8 +372,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
           addRole("Remixer", tag->value);
         else if (key == "MIXED_BY" || key == "MIXER"  )
           addRole("Mixer", tag->value);
-        else if (key == "SUBTITLE" || key == "SETSUBTITLE")
+        else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
           item->GetMusicInfoTag()->SetDiscSubtitle(tag->value);
+        else if (key == "DISC")
+          tag.SetDiscNumber(tag->value);
         else if (key == "COMMENT")
           item->GetMusicInfoTag()->SetComment(tag->value);
         else if (key == "MOOD")
