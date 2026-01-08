@@ -89,7 +89,7 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
      repeated here
   */
   std::vector<std::string> separators{" feat. ", " ft. ", " Feat. ", " Ft. ",  ";", ":",
-                                      "|",       "#",     "/",       " with ", "&"};
+                                      "|",       "#",     "/",       " with "};
   const std::string musicsep =
       CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_musicItemSeparator;
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
