@@ -110,6 +110,12 @@ bool CMusicCodecInfoFFmpeg::GetMusicCodecInfo(const std::string& strFileName,
         {
           switch (par_profile)
           {
+            case FF_PROFILE_DTS_HD_MA:
+              codec_name = "dtshd_ma";
+              break;
+            case FF_PROFILE_DTS_96_24:
+              codec_name = "dts_96_24";
+              break;
             case FF_PROFILE_DTS_HD_MA_X:
               codec_name = "dtshd_ma_x";
               break;
@@ -119,17 +125,11 @@ bool CMusicCodecInfoFFmpeg::GetMusicCodecInfo(const std::string& strFileName,
             case FF_PROFILE_DTS_ES:
               codec_name = "dts_es";
               break;
-            case FF_PROFILE_DTS_96_24:
-              codec_name = "dts_96_24";
-              break;
             case FF_PROFILE_DTS_HD_HRA:
               codec_name = "dtshd_hra";
               break;
             case FF_PROFILE_DTS_EXPRESS:
               codec_name = "dts_express";
-              break;
-            case FF_PROFILE_DTS_HD_MA:
-              codec_name = "dtshd_ma";
               break;
             default:
               codec_name = "dca";
