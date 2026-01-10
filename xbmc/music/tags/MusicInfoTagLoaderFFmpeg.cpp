@@ -115,7 +115,7 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
       tag.SetTrackNumber(std::stoi(value));
     else if (key ==  "DISC")
       tag.SetDiscNumber(std::stoi(value));
-    else if (key ==  "DATE")
+    else if (key == "DATE")
       tag.SetReleaseDate(value);
     else if (key ==  "COMPILATION" || key == "TCMP")
       tag.SetCompilation((std::stoi(value)) ? false : true);
@@ -135,9 +135,9 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     else if (key ==  "COPYRIGHT" || key ==  "TCOP")
     {
     } // Copyright message
-    else if (key ==  "TDRC")
+    else if (key == "TDRC")
       tag.SetReleaseDate(value);
-    else if (key ==  "TDOR" || key ==  "TORY")
+    else if (key == "TDOR" || key == "TORY" || key == "DATE_RECORDED")
       tag.SetOriginalDate(value);
     else if (key ==  "TDAT")
       tag.AddReleaseDate(value, true); // MMDD part
