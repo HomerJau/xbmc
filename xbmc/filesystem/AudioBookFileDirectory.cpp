@@ -256,7 +256,8 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 
   std::string thumb;
 
-  if (m_fctx->nb_chapters > 1)
+  // Chaned from > 1 in QQ Kodi 7 (testing)
+  if (m_fctx->nb_chapters > 0)
     thumb = CTextureUtils::GetWrappedImageURL(url.Get(), "music");
 
   // Look for any embedded cover art
