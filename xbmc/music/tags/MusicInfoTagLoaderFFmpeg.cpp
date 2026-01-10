@@ -159,18 +159,18 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
       tag.SetAlbumArtistSort(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
     else if (key ==  "TSOC" || key == "COMPOSERSORT" || key == "COMPOSER SORT")
       tag.SetComposerSort(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-    else if (key ==  "TSST") || key ==  "DISCSUBTITLE")
+    else if (key ==  "TSST" || key ==  "DISCSUBTITLE")
       tag.SetDiscSubtitle(value);
     // the above values are all id3v2.3/4 frames, we could also have text frames
-    else if (key ==  "MUSICBRAINZ ARTIST ID") || key ==  "MUSICBRAINZ_ARTISTID")
+    else if (key ==  "MUSICBRAINZ ARTIST ID" || key ==  "MUSICBRAINZ_ARTISTID")
       tag.SetMusicBrainzArtistID(StringUtils::Split(value, separators));
-    else if (key ==  "MUSICBRAINZ ALBUM ID") || key ==  "MUSICBRAINZ_ALBUMID")
+    else if (key ==  "MUSICBRAINZ ALBUM ID" || key ==  "MUSICBRAINZ_ALBUMID")
       tag.SetMusicBrainzAlbumID(value);
-    else if (key ==  "MUSICBRAINZ RELEASEGROUP ID") || key ==  "MUSICBRAINZ_RELEASEGROUPID")
+    else if (key ==  "MUSICBRAINZ RELEASEGROUP ID" || key ==  "MUSICBRAINZ_RELEASEGROUPID")
       tag.SetMusicBrainzReleaseGroupID(value);
-    else if (key ==  "MUSICBRAINZ ALBUM ARTIST ID") || key ==  "MUSICBRAINZ_ALBUMARTISTID")
+    else if (key ==  "MUSICBRAINZ ALBUM ARTIST ID" || key ==  "MUSICBRAINZ_ALBUMARTISTID")
       tag.SetMusicBrainzAlbumArtistID(StringUtils::Split(value, separators));
-    else if (key ==  "MUSICBRAINZ ALBUM ARTIST") || key ==  "MUSICBRAINZ_ALBUMARTIST")
+    else if (key ==  "MUSICBRAINZ ALBUM ARTIST" || key ==  "MUSICBRAINZ_ALBUMARTIST")
       tag.SetAlbumArtist(value);
     else if (key ==  "MUSICBRAINZ ALBUM TYPE")
       tag.SetMusicBrainzReleaseType(value);
