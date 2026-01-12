@@ -1643,7 +1643,6 @@ void CActiveAE::ChangeResamplers()
   std::list<CActiveAEStream*>::iterator it;
   for(it=m_streams.begin(); it!=m_streams.end(); ++it)
   {
-    (*it)->m_processingBuffers->ConfigureResampler(m_settings.normalizelevels, m_settings.stereoupmix, m_settings.resampleQuality);
 	(*it)->m_processingBuffers->ConfigureResampler(
         m_settings.normalizelevels, m_settings.stereoupmix, m_settings.resampleQuality,
         m_settings.mixSubLevel);
@@ -1991,7 +1990,7 @@ bool CActiveAE::RunStages()
     for (it = m_streams.begin(); it != m_streams.end(); ++it)
     {
       // reset target buffer level at pause (but not initial start pause)
-      if ((*it)->m_paused && (*it)->m_started && m_settings.lowLatencyMode)
+      if ((*it)->m_paused && (*it)->m_started)
         m_targetBufferLevel = 0;
 
       if ((*it)->m_paused || !(*it)->m_started || !(*it)->m_processingBuffers || !(*it)->m_pClock)
@@ -2696,7 +2695,7 @@ void CActiveAE::LoadSettings()
   m_settings.atempoThreshold = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_ATEMPOTHRESHOLD) / 100.0;
   m_settings.streamNoise = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_STREAMNOISE);
   m_settings.silenceTimeoutMinutes = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_STREAMSILENCE);
-  m_settings.mixSubLevel = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL) / 100.0; Removed from QQKodi7 patched from Master XBMC
+  m_settings.mixSubLevel = settings->GetInt(CSettings::SETTING_AUDIOOUTPUT_MIXSUBLEVEL) / 100.0; 
  // m_settings.lowLatencyMode = settings->GetBool(CSettings::SETTING_AUDIOOUTPUT_LOWLATENCY);
 }
 
