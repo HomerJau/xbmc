@@ -306,6 +306,11 @@ const std::string& CMusicInfoTag::GetCodec() const
   return m_codec;
 }
 
+int CMusicInfoTag::GetStream() const
+{
+  return m_iStream;
+}
+
 const std::string& CMusicInfoTag::GetReleaseDate() const
 {
   return m_strReleaseDate;
@@ -557,6 +562,11 @@ void CMusicInfoTag::SetBitsPerSample(int bitspersample)
 void CMusicInfoTag::SetCodec(const std::string& codec)
 {
   m_codec = codec;
+}
+
+void CMusicInfoTag::SetStream(int stream)
+{
+  m_iStream = stream;
 }
 
 void CMusicInfoTag::SetComment(const std::string& comment)
@@ -864,6 +874,7 @@ void CMusicInfoTag::SetAlbum(const CAlbum& album)
   SetNoOfChannels(album.iChannels);
   SetSampleRate(album.iSampleRate);
   SetBitsPerSample(album.iBitsPerSample);
+  // SetStream(album)
   SetDuration(album.iAlbumDuration);
 
   SetLoaded();
@@ -919,6 +930,7 @@ void CMusicInfoTag::SetSong(const CSong& song)
   SetNoOfChannels(song.iChannels);
   SetBitsPerSample(song.iBitsPerSample);
   SetCodec(song.strCodec);
+  SetStream(song.iStream);
   SetSongVideoURL(song.songVideoURL);
   if (song.replayGain.Get(ReplayGain::TRACK).Valid())
     m_replayGain.Set(ReplayGain::TRACK, song.replayGain.Get(ReplayGain::TRACK));
@@ -1009,6 +1021,7 @@ void CMusicInfoTag::Serialize(CVariant& value) const
   value["channels"] = m_channels;
   value["bitspersample"] = m_bitsPerSample;
   value["codec"] = m_codec;
+  value["stream"] = m_stream;
   value["songvideourl"] = m_songVideoURL;}
 
 void CMusicInfoTag::ToSortable(SortItem& sortable, Field field) const
@@ -1182,6 +1195,7 @@ void CMusicInfoTag::Archive(CArchive& ar)
     ar >> m_channels;
     ar >> m_bitsPerSample;
     ar >> m_codec;
+    ar >> m_stream;
     ar >> m_songVideoURL;
   }
 }
@@ -1238,6 +1252,7 @@ void CMusicInfoTag::Clear()
   m_channels = 0;
   m_bitsPerSample = 0;
   m_codec.clear();
+  m_stream = 0;
   m_stationName.clear();
   m_stationArt.clear();
   m_songVideoURL.clear();

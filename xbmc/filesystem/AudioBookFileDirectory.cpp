@@ -56,6 +56,25 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   if (!m_fctx && !ContainsFiles(url))
     return true;
 
+  // QQKodi7: Store all the audio stream codec data
+  struct audiostream
+  {
+    int streamIndex;
+    std::string strCodec;
+    int BitsPerSample;
+    int SampleRate;
+    int BitRate;
+    int Channels;
+    bool Default;
+  };
+  std::vector<audiostream> audiostreams;
+
+  /* QQKodi7: Create a 'dummy' list of 'files' for all extra streams so the Database 
+             has a 'song' record per adio stream using exact proprties tags etc 
+             except with the additiona sttream codxec data
+  */ 
+  CFileItemList streamItems
+
   std::string title;
   std::string author;
   std::string album;
@@ -187,73 +206,81 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   {
     if (m_fctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
     {
+      st = m_fctx->streams[streamIndex];
+      audiostream audioStream;
+      audioStream.streamIndex = i;
+      audioStream.Default = false;
+      audioStream.BitsPerSample = st->codecpar->bits_per_coded_sample;
+      audioStream.SampleRate = st->codecpar->sample_rate;
+      audioStream.BitRate = st->codecpar->bit_rate;
+      audioStream.Channels = st->codecpar->nb_channels;
+ 
+      codec_name = avcodec_get_name(st->codecpar->codec_id);
+      int par_profile = st->codecpar->profile;
+      if (st->codecpar->codec_id == AV_CODEC_ID_DTS)
+      {
+        switch (par_profile)
+        {
+          case FF_PROFILE_DTS_HD_MA:
+            codec_name = "dtshd_ma";
+            break;
+          case FF_PROFILE_DTS_96_24:
+            codec_name = "dts_96_24";
+            break;
+          case FF_PROFILE_DTS_HD_MA_X:
+            codec_name = "dtshd_ma_x";
+            break;
+          case FF_PROFILE_DTS_HD_MA_X_IMAX:
+            codec_name = "dtshd_ma_x_imax";
+            break;
+          case FF_PROFILE_DTS_ES:
+            codec_name = "dts_es";
+            break;
+          case FF_PROFILE_DTS_HD_HRA:
+            codec_name = "dtshd_hra";
+            break;
+          case FF_PROFILE_DTS_EXPRESS:
+            codec_name = "dts_express";
+            break;
+          default:
+            codec_name = "dca";
+            break;
+        }
+      }
+      if (st->codecpar->codec_id == AV_CODEC_ID_EAC3 && par_profile == FF_PROFILE_EAC3_DDP_ATMOS)
+        codec_name = "eac3_ddp_atmos";
+
+      if (st->codecpar->codec_id == AV_CODEC_ID_TRUEHD && par_profile == FF_PROFILE_TRUEHD_ATMOS)
+        codec_name = "truehd_atmos";
+
+      audioStream.strCodec = codec_name; 
+      if (i == 0)
+      {
+        albumtag.SetBitsPerSample(audioStream.BitsPerSample);
+        albumtag.SetSampleRate(audioStream.SampleRate);
+        albumtag.SetBitRate(audioStream.BitRate);
+        albumtag.SetNoOfChannels(audioStream.Channels);
+        albumtag.SetCodec(codec_name);
+        albumtag.SetStream = i
+      }
+      
       if (m_fctx->streams[i]->disposition & AV_DISPOSITION_DEFAULT)
       {
+        audioStream.Default = true;
         streamIndex = i;
-        break; // Found a default audio stream, however, more than 1 stream can be set as default !!
+      /*  Don't change QQ 7 testing - always use the first Codec
+        albumtag.SetBitsPerSample(audioStream.BitsPerSample);
+        albumtag.SetSampleRate(audioStream.SampleRate);
+        albumtag.SetBitRate(audioStream.BitRate);
+        albumtag.SetNoOfChannels(audioStream.Channels);
+        albumtag.SetCodec(codec_name);
+        albumtag.SetStream = i*/
+
       }
+       audiostreams.push_back(audioStream);
     }
   }
-  // If no default stream was found, look for the first audio stream as usually highest quality 1st
-  if (streamIndex == -1)
-  {
-    for (unsigned int i = 0; i < m_fctx->nb_streams; ++i)
-    {
-      if (m_fctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-      {
-        streamIndex = i;
-        break; // Found the first audio stream
-      }
-    }
-  }
-  if (streamIndex > -1)
-  {
-    st = m_fctx->streams[streamIndex];
-
-    albumtag.SetBitsPerSample(st->codecpar->bits_per_coded_sample);
-    albumtag.SetSampleRate(st->codecpar->sample_rate);
-    albumtag.SetBitRate(st->codecpar->bit_rate);
-    albumtag.SetNoOfChannels(st->codecpar->ch_layout.nb_channels);
-    codec_name = avcodec_get_name(st->codecpar->codec_id);
-    int par_profile = st->codecpar->profile;
-    if (st->codecpar->codec_id == AV_CODEC_ID_DTS)
-    {
-      switch (par_profile)
-      {
-        case FF_PROFILE_DTS_HD_MA:
-          codec_name = "dtshd_ma";
-          break;
-		case FF_PROFILE_DTS_96_24:
-          codec_name = "dts_96_24";
-          break;
-		case FF_PROFILE_DTS_HD_MA_X:
-          codec_name = "dtshd_ma_x";
-          break;
-        case FF_PROFILE_DTS_HD_MA_X_IMAX:
-          codec_name = "dtshd_ma_x_imax";
-          break;
-        case FF_PROFILE_DTS_ES:
-          codec_name = "dts_es";
-          break;
-        case FF_PROFILE_DTS_HD_HRA:
-          codec_name = "dtshd_hra";
-          break;
-        case FF_PROFILE_DTS_EXPRESS:
-          codec_name = "dts_express";
-          break;
-        default:
-          codec_name = "dca";
-          break;
-      }
-    }
-    if (st->codecpar->codec_id == AV_CODEC_ID_EAC3 && par_profile == FF_PROFILE_EAC3_DDP_ATMOS)
-      codec_name = "eac3_ddp_atmos";
-
-    if (st->codecpar->codec_id == AV_CODEC_ID_TRUEHD && par_profile == FF_PROFILE_TRUEHD_ATMOS)
-      codec_name = "truehd_atmos";
-    albumtag.SetCodec(codec_name);
-  }
-
+ 
   std::string thumb;
 
   // Chaned from > 1 in QQ Kodi 7 (testing)
@@ -459,6 +486,24 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   }
 
   return true;
+
+  /* QQ Kodi 7 - All The chapters (song items) have been added one for the first stream
+   Now add all the chapters again once per stream but updating stream's codec audiostream info
+
+   Garry note:
+   Just add the streams in the Database during the scan do not duplicate in Songs by doing below
+
+  for (const auto& audioStream : audiostreams)
+  {
+    // clone each item (song)
+    std::shared_ptr<CFileItem> item(new CFileItem(url.Get(), false));
+    for (const auto& streamItem : items)
+    {
+      // copy the  
+    }
+  }
+  return true;
+  */
 }
 
 void CAudioBookFileDirectory::AddCommaDelimitedString(const std::vector<std::string>& data,

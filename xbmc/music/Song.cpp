@@ -77,6 +77,7 @@ CSong::CSong(CFileItem& item)
   iBitsPerSample = tag.GetBitsPerSample();
   iChannels = tag.GetNoOfChannels();
   strCodec = tag.GetCodec();
+  iStream = tag.GetStream
   songVideoURL = tag.GetSongVideoURL();
 }
 
@@ -95,7 +96,7 @@ void CSong::SetArtistCredits(const std::vector<std::string>& names, const std::v
 
   // Vector of possible separators in the order least likely to be part of artist name
   static const std::vector<std::string> separators{
-      " feat. ", " ft. ", " Feat. ", " Ft. ", ";", ":", "|", "#", "/", " with ", "&"};
+      " feat. ", " ft. ", " Feat. ", " Ft. ", ";", ":", "|", "#", "/", " with "};
 
   if (!mbids.empty())
   { // Have musicbrainz artist info, so use it
@@ -244,7 +245,7 @@ void CSong::Serialize(CVariant& value) const
   value["samplerate"] = iSampleRate;
   value["bitspersample"] = iBitsPerSample;
   value["codec"] = strCodec;
-  value["channels"] = iChannels;
+  value["stream"] = iStream;
   value["songvideourl"] = songVideoURL;
 }
 
@@ -288,6 +289,7 @@ void CSong::Clear()
   iBitsPerSample = 0;
   strCodec.clear();
   iChannels =  0;
+  iStream = 0;
   songVideoURL.clear();
 
   replayGain = ReplayGain();
