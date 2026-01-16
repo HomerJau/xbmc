@@ -311,6 +311,11 @@ int CMusicInfoTag::GetStream() const
   return m_iStream;
 }
 
+const std::vector<std::audiostream>& CMusicInfoTag::GetAudioStreams() const
+{
+  return m_audiostreams;
+}
+
 const std::string& CMusicInfoTag::GetReleaseDate() const
 {
   return m_strReleaseDate;
@@ -567,6 +572,11 @@ void CMusicInfoTag::SetCodec(const std::string& codec)
 void CMusicInfoTag::SetStream(int stream)
 {
   m_iStream = stream;
+}
+
+void MUSIC_INFO::CMusicInfoTag::SetAudioStreams(const std::vector<audiostream>& audiostreams)
+{
+  m_audiostreams = audiostreams;
 }
 
 void CMusicInfoTag::SetComment(const std::string& comment)

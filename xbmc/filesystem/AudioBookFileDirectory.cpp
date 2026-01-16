@@ -55,25 +55,13 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 {
   if (!m_fctx && !ContainsFiles(url))
     return true;
-
-  // QQKodi7: Store all the audio stream codec data
-  struct audiostream
-  {
-    int streamIndex;
-    std::string strCodec;
-    int BitsPerSample;
-    int SampleRate;
-    int BitRate;
-    int Channels;
-    bool Default;
-  };
-  std::vector<audiostream> audiostreams;
-
+  
+   std::vector<audiostream> audiostreams;
   /* QQKodi7: Create a 'dummy' list of 'files' for all extra streams so the Database 
              has a 'song' record per adio stream using exact proprties tags etc 
              except with the additiona sttream codxec data
   */ 
-  CFileItemList streamItems
+ //  CFileItemList streamItems
 
   std::string title;
   std::string author;
@@ -280,7 +268,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
        audiostreams.push_back(audioStream);
     }
   }
- 
+  // QQ Kodi7 - Set the Audiostreams add the db (the db will only process this for first song processed for a Matroska file)
+  if (audiostreams.size() > 1)
+      albumtag.SetAudioStreams(audiostreams);
+
   std::string thumb;
 
   // Chaned from > 1 in QQ Kodi 7 (testing)

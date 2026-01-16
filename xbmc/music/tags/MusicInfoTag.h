@@ -22,6 +22,20 @@ class CVariant;
 #include <string>
 #include <vector>
 
+ // QQKodi7: Store all the audio stream codec data only during
+ // Audiobook file scan so streams can be saved to music db
+struct audiostream
+{
+  int streamIndex;
+  std::string strCodec;
+  int BitsPerSample;
+  int SampleRate;
+  int BitRate;
+  int Channels;
+  bool Default;
+};
+using audiostreams = std::vector<audiostream>;
+
 namespace MUSIC_INFO
 {
 class CMusicInfoTag final : public IArchivable, public ISerializable, public ISortable
@@ -85,6 +99,7 @@ public:
   int GetBitsPerSample() const;
   const std::string& GetCodec() const;
   int GetStream() const;
+  const std::vector<audiostream>& GetAudioStreams() const;
   const std::string& GetAlbumReleaseStatus() const;
   const std::string& GetStationName() const;
   const std::string& GetStationArt() const;
@@ -161,6 +176,7 @@ public:
   void SetBitsPerSample(int bitspersample);
   void SetCodec(const std::string& strCodec);
   void SetStream(int streamno);
+  void SetAudioStreams(const std::vector<audiostream>& audiostreams);
   void SetAlbumReleaseStatus(const std::string& strReleaseStatus);
   void SetStationName(const std::string& strStationName); // name of online radio station
   void SetStationArt(const std::string& strStationArt);
@@ -264,6 +280,7 @@ protected:
   int m_bitsPerSample;
   std::string m_codec;
   int m_iStream;
+  std::vector<audiostream> m_audiostreams;
   std::string m_stationName;
   std::string m_stationArt; // Used to fetch thumb URL for Shoutcasts
   std::string m_songVideoURL; // link to a video for a song
