@@ -308,7 +308,7 @@ const std::string& CMusicInfoTag::GetCodec() const
 
 int CMusicInfoTag::GetStream() const
 {
-  return m_Stream;
+  return m_istream;
 }
 
 const std::vector<audiostream>& CMusicInfoTag::GetAudioStreams() const
@@ -571,7 +571,7 @@ void CMusicInfoTag::SetCodec(const std::string& codec)
 
 void CMusicInfoTag::SetStream(int stream)
 {
-  m_stream = stream;
+  m_istream = stream;
 }
 
 void MUSIC_INFO::CMusicInfoTag::SetAudioStreams(const std::vector<audiostream>& audiostreams)
@@ -1031,7 +1031,7 @@ void CMusicInfoTag::Serialize(CVariant& value) const
   value["channels"] = m_channels;
   value["bitspersample"] = m_bitsPerSample;
   value["codec"] = m_codec;
-  value["stream"] = m_stream;
+  value["stream"] = m_istream;
   value["songvideourl"] = m_songVideoURL;}
 
 void CMusicInfoTag::ToSortable(SortItem& sortable, Field field) const
@@ -1205,7 +1205,7 @@ void CMusicInfoTag::Archive(CArchive& ar)
     ar >> m_channels;
     ar >> m_bitsPerSample;
     ar >> m_codec;
-    ar >> m_stream;
+    ar >> m_istream;
     ar >> m_songVideoURL;
   }
 }
@@ -1262,7 +1262,7 @@ void CMusicInfoTag::Clear()
   m_channels = 0;
   m_bitsPerSample = 0;
   m_codec.clear();
-  m_stream = 0;
+  m_istream = 0;
   m_stationName.clear();
   m_stationArt.clear();
   m_songVideoURL.clear();
