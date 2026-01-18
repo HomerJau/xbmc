@@ -222,6 +222,7 @@ void CMusicDatabase::CreateTables()
               " strVideoURL TEXT, "
               " strReplayGain text, "
               " dateAdded TEXT, dateNew TEXT, dateModified TEXT)");
+
   CLog::Log(LOGINFO, "create song_artist table");
   m_pDS->exec("CREATE TABLE song_artist (idArtist integer, idSong integer, idRole integer, iOrder "
               "integer, strArtist text)");
@@ -439,7 +440,7 @@ void CMusicDatabase::CreateRemovedLinkTriggers()
 void CMusicDatabase::CreateViews()
 {
   CLog::Log(LOGINFO, "create album stream view");
-  m_pDS->exec("CREATE VIEW songview AS "
+  m_pDS->exec("CREATE VIEW albumstreamview AS "
      "SELECT idAlbum, iStream, strCodec, iChannels, iBitrate, iSampleRate, iBitsPerSample, iTimesPlayed, lastplayed FROM audiostream "
      "UNION ALL "
      "SELECT album.idAlbum, NULL as iStream, "
@@ -9487,15 +9488,15 @@ void CMusicDatabase::UpdateTables(int version)
   // QQ Kodi 7 ---------------------------------------------
    if (version < 85) // add new audiostream table and change views to use streams for virtual albums
   {
-    m_pDS->exec("CREATE TABLE audiostream (idStream integer primary key, "
+    m_pDS->exec("CREATE TABLE audiostream (idStream INTEGER PRIMARY KEY, "
                 "iStream INTEGER NOT NULL DEFAULT 0, "
-                "idAlbum integer, "
+                "idAlbum INTEGER, "
                 "iBitRate INTEGER NOT NULL DEFAULT 0, "
                 "iSampleRate INTEGER NOT NULL DEFAULT 0, "
                 "iBitsPerSample INTEGER NOT NULL DEFAULT 0, "
                 "strCodec TEXT, "
                 "iChannels INTEGER NOT NULL DEFAULT 0, "
-                "iTimesPlayed integer, "
+                "iTimesPlayed INTEGER, "
                 "lastplayed varchar(20) default NULL, "
                 "rating FLOAT NOT NULL DEFAULT 0, "
                 "votes INTEGER NOT NULL DEFAULT 0, "
