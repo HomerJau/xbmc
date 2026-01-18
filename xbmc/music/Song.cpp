@@ -77,7 +77,7 @@ CSong::CSong(CFileItem& item)
   iBitsPerSample = tag.GetBitsPerSample();
   iChannels = tag.GetNoOfChannels();
   strCodec = tag.GetCodec();
-  iStream = tag.GetStream
+  iStream = tag.GetStream();
   songVideoURL = tag.GetSongVideoURL();
 }
 
