@@ -311,7 +311,7 @@ int CMusicInfoTag::GetStream() const
   return m_iStream;
 }
 
-const std::vector<std::audiostream>& CMusicInfoTag::GetAudioStreams() const
+const std::vector<audiostream>& CMusicInfoTag::GetAudioStreams() const
 {
   return m_audiostreams;
 }
