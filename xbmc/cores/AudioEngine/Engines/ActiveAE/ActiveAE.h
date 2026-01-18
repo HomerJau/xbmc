@@ -64,7 +64,7 @@ struct AudioSettings
   bool streamNoise;
   int silenceTimeoutMinutes;
   float mixSubLevel; 
- // bool lowLatencyMode; QQKodi7 removed this patched variable as not used in QQ7
+  bool lowLatencyMode; 
 };
 
 class CActiveAEControlProtocol : public Protocol
