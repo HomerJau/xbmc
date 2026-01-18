@@ -163,6 +163,21 @@ void CMusicDatabase::CreateTables()
               " idInfoSetting INTEGER NOT NULL DEFAULT 0, "
               " dateAdded TEXT, dateNew TEXT, dateModified TEXT)");
 
+   CLog::Log(LOGINFO, "create audiostream table");
+   m_pDS->exec("CREATE TABLE audiostream (idStream integer primary key, "
+              "iStream INTEGER NOT NULL DEFAULT 0, "
+              "idAlbum integer, "
+              "iBitRate INTEGER NOT NULL DEFAULT 0, "
+              "iSampleRate INTEGER NOT NULL DEFAULT 0, "
+              "iBitsPerSample INTEGER NOT NULL DEFAULT 0, "
+              "strCodec TEXT, "
+              "iChannels INTEGER NOT NULL DEFAULT 0, "
+              "iTimesPlayed integer, "
+              "lastplayed varchar(20) default NULL, "
+              "rating FLOAT NOT NULL DEFAULT 0, "
+              "votes INTEGER NOT NULL DEFAULT 0, "
+              "userrating INTEGER NOT NULL DEFAULT 0)");
+
   CLog::Log(LOGINFO, "create audiobook table");
   m_pDS->exec("CREATE TABLE audiobook (idBook integer primary key, "
               " strBook varchar(256), strAuthor text,"
@@ -251,6 +266,8 @@ void CMusicDatabase::CreateAnalytics()
   m_pDS->exec("CREATE UNIQUE INDEX idxAlbum_2 ON album(strMusicBrainzAlbumID(36))");
   m_pDS->exec("CREATE INDEX idxAlbum_3 ON album(idInfoSetting)");
 
+  m_pDS->exec("CREATE INDEX idxAudiostreamAlbum ON audiostream(idAlbum)");
+
   m_pDS->exec("CREATE UNIQUE INDEX idxAlbumArtist_1 ON album_artist ( idAlbum, idArtist )");
   m_pDS->exec("CREATE UNIQUE INDEX idxAlbumArtist_2 ON album_artist ( idArtist, idAlbum )");
 
@@ -295,6 +312,7 @@ void CMusicDatabase::CreateAnalytics()
   CLog::Log(LOGINFO, "create triggers");
   m_pDS->exec("CREATE TRIGGER tgrDeleteAlbum AFTER delete ON album FOR EACH ROW BEGIN"
               "  DELETE FROM song WHERE song.idAlbum = old.idAlbum;"
+              "  DELETE FROM audiostream WHERE audiostream.idAlbum = old.idAlbum;"
               "  DELETE FROM album_artist WHERE album_artist.idAlbum = old.idAlbum;"
               "  DELETE FROM album_source WHERE album_source.idAlbum = old.idAlbum;"
               "  DELETE FROM art WHERE media_id=old.idAlbum AND media_type='album';"
@@ -420,6 +438,20 @@ void CMusicDatabase::CreateRemovedLinkTriggers()
 
 void CMusicDatabase::CreateViews()
 {
+  CLog::Log(LOGINFO, "create album stream view");
+  m_pDS->exec("CREATE VIEW songview AS "
+     "SELECT idAlbum, iStream, strCodec, iChannels, iBitrate, iSampleRate, iBitsPerSample, iTimesPlayed, lastplayed FROM audiostream "
+     "UNION ALL "
+     "SELECT album.idAlbum, NULL as iStream, "
+	 "(SELECT song.strCodec FROM song WHERE song.idAlbum = album.idAlbum LIMIT 1) AS strCodec, "
+	 "(SELECT song.iChannels FROM song WHERE song.idAlbum = album.idAlbum LIMIT 1) as iChannels, "
+	 "(SELECT ROUND(AVG(song.iBitrate)) FROM song WHERE song.idAlbum = album.idAlbum LIMIT 1) AS iBitrate, "
+	 "(SELECT song.iSampleRate FROM song WHERE song.idAlbum = album.idAlbum LIMIT 1) AS iSampleRate, "
+	 "(SELECT song.iBitsPerSample FROM song WHERE song.idAlbum = album.idAlbum LIMIT 1) AS iBitsPerSample, "
+     "(SELECT ROUND(AVG(song.iTimesPlayed)) FROM song WHERE song.idAlbum = album.idAlbum) AS iTimesPlayed, "
+     "(SELECT MAX(song.lastplayed) FROM song WHERE song.idAlbum = album.idAlbum) AS lastplayed "
+     "FROM album left join audiostream ON album.idAlbum = audiostream.idAlbum WHERE audiostream.idAlbum IS NULL");
+
   CLog::Log(LOGINFO, "create song view");
   m_pDS->exec("CREATE VIEW songview AS SELECT "
               "        song.idSong AS idSong, "
@@ -433,8 +465,8 @@ void CMusicDatabase::CreateViews()
               "        song.strDiscSubtitle as strDiscSubtitle, "
               "        strFileName, "
               "        strMusicBrainzTrackID, "
-              "        iTimesPlayed, iStartOffset, iEndOffset, "
-              "        lastplayed, "
+              "        albumstreamview.iTimesPlayed as iTimesPlayed, iStartOffset, iEndOffset, "
+              "        albumstreamview.lastplayed as lastplayed, "
               "        song.rating, "
               "        song.userrating, "
               "        song.votes, "
@@ -451,22 +483,22 @@ void CMusicDatabase::CreateViews()
               "        song.mood as mood,"
               "        song.strReplayGain, "
               "        iBPM, "
-              "        iBitRate, "
-              "        iSampleRate, "
-              "        iBitsPerSample, "
-              "        strCodec, "
-              "        iChannels, "
+              "        albumstreamview.iBitRate AS iBitRate, "
+              "        albumstreamview.iSampleRate AS iSampleRate, "
+              "        albumstreamview.iBitsPerSample AS iBitsPerSample, "
+              "        albumstreamview.strCodec AS strCodec, "
+              "        albumstreamview.iChannels AS iChannels, "
               "        song.strVideoURL as strVideoURL, "
               "        album.iAlbumDuration AS iAlbumDuration, "
               "        album.iDiscTotal as iDiscTotal, "
               "        song.dateAdded as dateAdded, "
               "        song.dateNew AS dateNew, "
-              "        song.dateModified AS dateModified "
-              "FROM song"
-              "  JOIN album ON"
-              "    song.idAlbum=album.idAlbum"
-              "  JOIN path ON"
-              "    song.idPath=path.idPath");
+              "        song.dateModified AS dateModified, "
+              "        albumstreamview.iStream AS iStream "
+              "  FROM song "
+              "  JOIN albumstreamview ON song.idAlbum = albumstreamview.idAlbum "
+              "  JOIN album ON song.idAlbum = album.idAlbum "
+              "  JOIN path ON song.idPath=path.idPath");
 
   CLog::Log(LOGINFO, "create album view");
   m_pDS->exec("CREATE VIEW albumview AS SELECT "
@@ -495,24 +527,16 @@ void CMusicDatabase::CreateViews()
               "bScrapedMBID,"
               "lastScraped,"
               "dateAdded, dateNew, dateModified, "
-              "(SELECT ROUND(AVG(song.iTimesPlayed)) FROM song "
-              "WHERE song.idAlbum = album.idAlbum) AS iTimesPlayed, "
+              "albumstreamview.iTimesPlayed AS iTimesPlayed, "
               "strReleaseType, "
               "iDiscTotal, "
-              "(SELECT MAX(song.lastplayed) FROM song "
-              "WHERE song.idAlbum = album.idAlbum) AS lastplayed, "
-              "(SELECT song.strCodec FROM song WHERE song.idAlbum = album.idAlbum LIMIT 1)"
-              " AS strCodec, "
-              "(SELECT song.iChannels FROM song WHERE song.idAlbum = album.idAlbum LIMIT 1)"
-              " as iChannels, "
-              "(SELECT ROUND(AVG(song.iBitrate)) FROM song WHERE song.idAlbum = album.idAlbum"
-              " LIMIT 1) AS iBitrate , "
-              "(SELECT song.iSampleRate FROM song WHERE song.idAlbum = album.idAlbum LIMIT 1)"
-              " AS iSampleRate, "
-              "(SELECT song.iBitsPerSample FROM song WHERE song.idAlbum = album.idAlbum LIMIT 1)"
-              " AS iBitsPerSample, "
-              "iAlbumDuration "
-              "FROM album");
+              "albumstreamview.lastplayed AS lastplayed,"
+              "albumstreamview.strCodec AS strCodec, albumstreamview.iChannels AS iChannels, "
+              "albumstreamview.iBitrate AS iBitrate, albumstreamview.iSampleRate AS iSampleRate, "
+              "albumstreamview.iBitsPerSample AS iBitsPerSample,"
+              "iAlbumDuration, "
+              "albumstreamview.iStream AS iStream "
+              "FROM album JOIN albumstreamview ON album.idAlbum = albumstreamview.idAlbum");
 
   CLog::Log(LOGINFO, "create artist view");
   m_pDS->exec("CREATE VIEW artistview AS SELECT"
@@ -9460,6 +9484,28 @@ void CMusicDatabase::UpdateTables(int version)
     m_pDS->exec("ALTER TABLE song ADD strCodec TEXT");
   }
 
+  // QQ Kodi 7 ---------------------------------------------
+   if (version < 85) // add new audiostream table and change views to use streams for virtual albums
+  {
+    m_pDS->exec("CREATE TABLE audiostream (idStream integer primary key, "
+                "iStream INTEGER NOT NULL DEFAULT 0, "
+                "idAlbum integer, "
+                "iBitRate INTEGER NOT NULL DEFAULT 0, "
+                "iSampleRate INTEGER NOT NULL DEFAULT 0, "
+                "iBitsPerSample INTEGER NOT NULL DEFAULT 0, "
+                "strCodec TEXT, "
+                "iChannels INTEGER NOT NULL DEFAULT 0, "
+                "iTimesPlayed integer, "
+                "lastplayed varchar(20) default NULL, "
+                "rating FLOAT NOT NULL DEFAULT 0, "
+                "votes INTEGER NOT NULL DEFAULT 0, "
+                "userrating INTEGER NOT NULL DEFAULT 0)");
+    /*  Dont create new the index here, indexes get created in another function 
+    m_pDS->exec("CREATE INDEX idxAudiostreamAlbum ON audiostream(idAlbum)");
+    */
+  }
+  //  QQ Kodi 7 ---------------------------------------------
+   
   // Set the version of tag scanning required.
   // Not every schema change requires the tags to be rescanned, set to the highest schema version
   // that needs this. Forced rescanning (of music files that have not changed since they were
@@ -9480,7 +9526,7 @@ void CMusicDatabase::UpdateTables(int version)
 
 int CMusicDatabase::GetSchemaVersion() const
 {
-  return 84;
+  return 85;
 }
 
 int CMusicDatabase::GetMusicNeedsTagScan()
