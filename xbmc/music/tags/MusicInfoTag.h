@@ -279,7 +279,7 @@ protected:
   int m_bitrate;
   int m_bitsPerSample;
   std::string m_codec;
-  int m_iStream;
+  int m_Stream;
   std::vector<audiostream> m_audiostreams;
   std::string m_stationName;
   std::string m_stationArt; // Used to fetch thumb URL for Shoutcasts
