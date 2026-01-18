@@ -201,7 +201,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       audioStream.BitsPerSample = st->codecpar->bits_per_coded_sample;
       audioStream.SampleRate = st->codecpar->sample_rate;
       audioStream.BitRate = st->codecpar->bit_rate;
-      audioStream.Channels = st->codecpar->nb_channels;
+      audioStream.Channels = st->codecpar->ch_layout.nb_channels;
  
       codec_name = avcodec_get_name(st->codecpar->codec_id);
       int par_profile = st->codecpar->profile;
@@ -249,7 +249,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
         albumtag.SetBitRate(audioStream.BitRate);
         albumtag.SetNoOfChannels(audioStream.Channels);
         albumtag.SetCodec(codec_name);
-        albumtag.SetStream = i
+        albumtag.SetStream(i);
       }
       
       if (m_fctx->streams[i]->disposition & AV_DISPOSITION_DEFAULT)
