@@ -723,7 +723,7 @@ void PlayItem(const std::shared_ptr<CFileItem>& itemIn,
   {
     AddItemToPlayListAndPlay(item, nullptr, player);
   }
-  else if (MUSIC::IsAudio(*item))
+  else if (item->HasMusicInfoTag())
   {
     if (mode == ContentUtils::PlayMode::PLAY_FROM_HERE ||
         (mode == ContentUtils::PlayMode::CHECK_AUTO_PLAY_NEXT_ITEM && IsAutoPlayNextItem(*item)))
