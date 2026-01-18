@@ -308,7 +308,7 @@ const std::string& CMusicInfoTag::GetCodec() const
 
 int CMusicInfoTag::GetStream() const
 {
-  return m_iStream;
+  return m_Stream;
 }
 
 const std::vector<audiostream>& CMusicInfoTag::GetAudioStreams() const
@@ -571,7 +571,7 @@ void CMusicInfoTag::SetCodec(const std::string& codec)
 
 void CMusicInfoTag::SetStream(int stream)
 {
-  m_iStream = stream;
+  m_stream = stream;
 }
 
 void MUSIC_INFO::CMusicInfoTag::SetAudioStreams(const std::vector<audiostream>& audiostreams)
