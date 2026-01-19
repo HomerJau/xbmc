@@ -196,6 +196,8 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
       tagdata = StringUtils::Split(avtag->key, separators);
       AddRole(tagdata, separators, tag);
     }
+    else if (key == "REMIXED_BY")
+      tag.AddArtistRole("Remixer", value);
     else if (key ==  "LYRICIST")
       tag.AddArtistRole("Lyricist", StringUtils::Split(value, separators));
     else if (key ==  "COMPOSER")
@@ -226,6 +228,9 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
 
   if (!tag.GetTitle().empty())
     tag.SetLoaded(true);
+
+  const int Duration = fctx->streams[0]->duration * av_q2d(fctx->streams[0]->time_base);
+  tag.SetDuration(Duration)
 
   avformat_close_input(&fctx);
   av_free(ioctx->buffer);
