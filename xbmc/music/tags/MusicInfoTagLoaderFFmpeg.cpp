@@ -230,7 +230,7 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     tag.SetLoaded(true);
 
   const int Duration = fctx->streams[0]->duration * av_q2d(fctx->streams[0]->time_base);
-  tag.SetDuration(Duration)
+  tag.SetDuration(Duration);
 
   avformat_close_input(&fctx);
   av_free(ioctx->buffer);
