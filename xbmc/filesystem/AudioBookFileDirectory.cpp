@@ -257,7 +257,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   std::string thumb;
 
   // Chaned to > 0 in QQ Kodi 7 (testing)
-  if (m_fctx->nb_chapters > 1)
+  if (m_fctx->nb_chapters > 0)
     thumb = CTextureUtils::GetWrappedImageURL(url.Get(), "music");
 
   // Look for any embedded cover art
@@ -266,7 +266,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   float chapter_size = 0;
 
   bool chapter_error = false;
-  for (size_t i=0;i<m_fctx->nb_chapters;++i)
+  for (size_t i=0;i<=m_fctx->nb_chapters;++i)
   {
     if (m_fctx->chapters[i]->start < 0) // negative start time, ignore it
       continue;
@@ -451,6 +451,15 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     }
     item->GetMusicInfoTag()->SetDuration(
         CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
+
+    /* Attempt to fix no duration in singla chaptered MKA
+    if (m_fctx->nb_chapters == 1)
+    {
+      const int Duration = fctx->streams[0]->duration * av_q2d(fctx->streams[0]->time_base);
+      item->GetMusicInfoTag()->SetDuration(Duration)
+    }
+    */
+
     item->SetProperty("item_start", item->GetStartOffset());
     item->SetProperty("audio_bookmark", item->GetStartOffset());
     if (!thumb.empty() && !chapter_error)
