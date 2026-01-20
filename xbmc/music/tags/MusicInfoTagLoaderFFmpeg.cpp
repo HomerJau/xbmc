@@ -229,7 +229,7 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     tag.SetNoOfChannels(codec_info.channels);
   }
  
-  tag.SetDuration(CUtil::ConvertMilliSecsToSecsInt(end_time_mka_file);
+  tag.SetDuration(CUtil::ConvertMilliSecsToSecsInt(end_time_mka_file));
 
   if (!tag.GetTitle().empty())
     tag.SetLoaded(true);
