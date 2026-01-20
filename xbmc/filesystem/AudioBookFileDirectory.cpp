@@ -452,12 +452,12 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     item->GetMusicInfoTag()->SetDuration(
         CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
 
-    /* Attempt to fix no duration in singla chaptered MKA */
+    /* Attempt to fix no duration in single chaptered MKA
     if (m_fctx->nb_chapters == 1)
     {
       item->GetMusicInfoTag()->SetDuration(end_time_mka_file);
     }
-  
+   */
     item->SetProperty("item_start", item->GetStartOffset());
     item->SetProperty("audio_bookmark", item->GetStartOffset());
     if (!thumb.empty() && !chapter_error)
