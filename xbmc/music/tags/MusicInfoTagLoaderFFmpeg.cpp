@@ -224,7 +224,7 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     tag.SetBitsPerSample(codec_info.bitsPerSample);
     tag.SetCodec(codec_info.codecName);
     tag.SetNoOfChannels(codec_info.channels);
-    tag.SetDuration(codec_info.duration);
+    tag.SetDuration(CUtil::ConvertMilliSecsToSecsInt(codec_info.duration));
   }
  
   if (!tag.GetTitle().empty())

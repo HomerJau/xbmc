@@ -266,7 +266,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   float chapter_size = 0;
 
   bool chapter_error = false;
-  for (size_t i=0; i <= m_fctx->nb_chapters;++i)
+  for (size_t i=0; i < m_fctx->nb_chapters;++i)
   {
     if (m_fctx->chapters[i]->start < 0) // negative start time, ignore it
       continue;
@@ -452,12 +452,6 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     item->GetMusicInfoTag()->SetDuration(
         CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
 
-    /* Attempt to fix no duration in single chaptered MKA
-    if (m_fctx->nb_chapters == 1)
-    {
-      item->GetMusicInfoTag()->SetDuration(end_time_mka_file);
-    }
-   */
     item->SetProperty("item_start", item->GetStartOffset());
     item->SetProperty("audio_bookmark", item->GetStartOffset());
     if (!thumb.empty() && !chapter_error)
