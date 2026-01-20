@@ -73,8 +73,6 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     return false;
   }
 
-   const int end_time_mka_file = fctx->duration * av_q2d(av_get_time_base_q());
-
   /* ffmpeg supports the return of ID3v2 metadata but has its own naming system
      for some, but not all, of the keys. In particular the key for the conductor
      tag TPE3 is called "performer".
@@ -226,10 +224,9 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     tag.SetBitsPerSample(codec_info.bitsPerSample);
     tag.SetCodec(codec_info.codecName);
     tag.SetNoOfChannels(codec_info.channels);
+    tag.SetDuration(codec_info.duration);
   }
-    
-  tag.SetDuration(end_time_mka_file);
-
+ 
   if (!tag.GetTitle().empty())
     tag.SetLoaded(true);
 
