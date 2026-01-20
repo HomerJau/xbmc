@@ -13,6 +13,7 @@
 #include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
+#include "Util.h"
 #include "utils/StringUtils.h"
 
 using namespace MUSIC_INFO;
