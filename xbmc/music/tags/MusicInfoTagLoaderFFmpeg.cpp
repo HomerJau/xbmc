@@ -74,7 +74,6 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     return false;
   }
 
-  const int end_time_mka_file = fctx->duration * av_q2d(av_get_time_base_q());
 
   /* ffmpeg supports the return of ID3v2 metadata but has its own naming system
      for some, but not all, of the keys. In particular the key for the conductor
@@ -229,7 +228,8 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     tag.SetNoOfChannels(codec_info.channels);
   }
  
-  tag.SetDuration(CUtil::ConvertMilliSecsToSecsInt(end_time_mka_file));
+ // const int end_time_mka_file = fctx->duration * av_q2d(av_get_time_base_q());
+  tag.SetDuration(CUtil::ConvertMilliSecsToSecsInt(fctx->duration * av_q2d(av_get_time_base_q())));
 
   if (!tag.GetTitle().empty())
     tag.SetLoaded(true);
