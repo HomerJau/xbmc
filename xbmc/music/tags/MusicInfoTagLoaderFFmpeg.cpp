@@ -229,7 +229,7 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
   }
  
  // const int end_time_mka_file = fctx->duration * av_q2d(av_get_time_base_q());
-  tag.SetDuration(CUtil::ConvertMilliSecsToSecsInt(fctx->duration * av_q2d(av_get_time_base_q())));
+  tag.SetDuration(fctx->duration * av_q2d(av_get_time_base_q()));
 
   if (!tag.GetTitle().empty())
     tag.SetLoaded(true);
