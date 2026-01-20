@@ -455,7 +455,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     if (m_fctx->nb_chapters == 1)
     {
       item->GetMusicInfoTag()->SetDuration(CUtil::ConvertSecsToMilliSecs(end_time_mka_file));
-      if (item->GetMusicInfoTag()->GetDuration <= 0)
+      if (item->GetMusicInfoTag()->GetDuration() <= 0)
          item->GetMusicInfoTag()->SetDuration(CUtil::ConvertSecsToMilliSecs(end_time_m4b_file));
     }
 
