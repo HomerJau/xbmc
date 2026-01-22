@@ -376,18 +376,14 @@ bool CApplicationSkinHandling::LoadCustomWindows()
 
 void CApplicationSkinHandling::ReloadSkin(bool confirm)
 {
-  auto gui = CServiceBroker::GetGUI();
-  if (gui == nullptr)
-    return;
-
-  auto skin = gui->GetSkinInfo();
-  if (!skin || m_bInitializing)
+  if (!g_SkinInfo || m_bInitializing)
     return; // Don't allow reload before skin is loaded by system
 
-  std::string oldSkin = skin->ID();
+  std::string oldSkin = g_SkinInfo->ID();
 
-  CGUIMessage msg(GUI_MSG_LOAD_SKIN, -1, gui->GetWindowManager().GetActiveWindow());
-  gui->GetWindowManager().SendMessage(msg);
+  CGUIMessage msg(GUI_MSG_LOAD_SKIN, -1,
+                  CServiceBroker::GetGUI()->GetWindowManager().GetActiveWindow());
+  CServiceBroker::GetGUI()->GetWindowManager().SendMessage(msg);
 
   const std::shared_ptr<CSettings> settings = CServiceBroker::GetSettingsComponent()->GetSettings();
   std::string newSkin = settings->GetString(CSettings::SETTING_LOOKANDFEEL_SKIN);
@@ -404,7 +400,7 @@ void CApplicationSkinHandling::ReloadSkin(bool confirm)
         settings->SetString(CSettings::SETTING_LOOKANDFEEL_SKIN, oldSkin);
       }
       else
-        gui->GetWindowManager().ActivateWindow(WINDOW_STARTUP_ANIM);
+        CServiceBroker::GetGUI()->GetWindowManager().ActivateWindow(WINDOW_STARTUP_ANIM);
     }
   }
   else
