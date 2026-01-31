@@ -1381,7 +1381,12 @@
         "albumstatus",
         "datemodified",
         "datenew",
-        "albumduration"
+        "albumduration",
+		"codec",
+		"channels",
+		"samplerate",
+		"bitspersample",
+		"bitrate"
       ]
     }
   },
@@ -1436,8 +1441,10 @@
         "originaldate",
         "bpm",
         "samplerate",
+		"bitspersample",
         "bitrate",
         "channels",
+		"codec",
         "datemodified",
         "datenew",
         "songvideourl"
@@ -1696,7 +1703,22 @@
       },
       "albumduration": {
         "type": "integer"
-      }
+      },
+      "codec": {
+        "type": "string"
+      },	  
+      "channels": {
+        "type": "integer"
+      },	  
+      "samplerate": {
+        "type": "integer"
+      },
+      "bitspersample": {
+        "type": "integer"
+      },
+      "bitrate": {
+        "type": "Integer"
+      }	  
     }
   },
   "Audio.Details.Song": {
@@ -1784,12 +1806,18 @@
       "samplerate": {
         "type": "Integer"
       },
+	  "bitspersample": {
+        "type": "integer"
+      },	
       "bitrate": {
         "type": "Integer"
       },
       "channels": {
         "type": "Integer"
       },
+      "codec": {
+        "type": "string"
+      },	  
       "songvideourl": {
         "type": "string"
       }
