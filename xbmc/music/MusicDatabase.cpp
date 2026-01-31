@@ -7336,7 +7336,7 @@ static const translateJSONField JSONtoDBAlbum[] = {
   { "albumduration",            "integer", true,  "iAlbumDuration",         "" },
   { "codec",                     "string", true,  "strCodec",               "" },   // Scalar subquery in view
   { "channels",                 "integer", true,  "iChannels",              "" },   // Scalar subquery in view
-  { "SampleRate",               "integer", true,  "iSampleRate",            "" },   // Scalar subquery in view
+  { "samplerate",               "integer", true,  "iSampleRate",            "" },   // Scalar subquery in view
   { "bitspersample",            "integer", true,  "iBitsPerSample",         "" },   // Scalar subquery in view
   { "bitrate",                  "integer", true,  "iBitRate",               "" },   // Scalar subquery in view
   // Scalar subquery fields
