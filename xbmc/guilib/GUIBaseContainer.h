@@ -51,7 +51,7 @@ public:
   void AllocResources() override;
   void FreeResources(bool immediately = false) override;
   void UpdateVisibility(const CGUIListItem *item = NULL) override;
-  void AssignDepth() override;
+  void AssignDepth() const;
 
   virtual unsigned int GetRows() const;
 
