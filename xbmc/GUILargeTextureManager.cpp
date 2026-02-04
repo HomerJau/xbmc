@@ -13,6 +13,8 @@
 #include "commons/ilog.h"
 #include "guilib/GUIComponent.h"
 #include "guilib/Texture.h"
+#include "settings/AdvancedSettings.h"
+#include "settings/SettingsComponent.h"
 #include "utils/JobManager.h"
 #include "utils/TimeUtils.h"
 #include "utils/log.h"
@@ -65,6 +67,9 @@ bool CImageLoader::DoWork()
       if (needsChecking)
         CServiceBroker::GetTextureCache()->BackgroundCacheImage(texturePath);
 
+      if (CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_guiAsyncTextureUpload)
+        m_texture->LoadToGPUAsync();
+
       return true;
     }
 
@@ -77,7 +82,14 @@ bool CImageLoader::DoWork()
 
   // not in our texture cache or it failed to load from it, so try and load directly and then cache the result
   CServiceBroker::GetTextureCache()->CacheImage(texturePath, &m_texture);
-  return (m_texture != NULL);
+
+  if (!m_texture)
+    return false;
+
+  if (CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_guiAsyncTextureUpload)
+    m_texture->LoadToGPUAsync();
+
+  return true;
 }
 
 CGUILargeTextureManager::CLargeTexture::CLargeTexture(const std::string &path):
@@ -146,8 +158,13 @@ void CGUILargeTextureManager::CleanupUnusedImages(bool immediately)
   while (it != m_allocated.end())
   {
     CLargeTexture *image = *it;
+    // Save path before potential deletion to avoid use-after-free
+    const std::string path = image->GetPath();
     if (image->DeleteIfRequired(immediately))
+    {
+      m_allocatedLookup.erase(path);
       it = m_allocated.erase(it);
+    }
     else
       ++it;
   }
@@ -158,16 +175,16 @@ void CGUILargeTextureManager::CleanupUnusedImages(bool immediately)
 bool CGUILargeTextureManager::GetImage(const std::string &path, CTextureArray &texture, bool firstRequest, const bool useCache)
 {
   std::unique_lock<CCriticalSection> lock(m_listSection);
-  for (listIterator it = m_allocated.begin(); it != m_allocated.end(); ++it)
+
+  // O(1) lookup in allocated textures
+  auto it = m_allocatedLookup.find(path);
+  if (it != m_allocatedLookup.end())
   {
-    CLargeTexture *image = *it;
-    if (image->GetPath() == path)
-    {
-      if (firstRequest)
-        image->AddRef();
-      texture = image->GetTexture();
-      return texture.size() > 0;
-    }
+    CLargeTexture *image = it->second;
+    if (firstRequest)
+      image->AddRef();
+    texture = image->GetTexture();
+    return texture.size() > 0;
   }
 
   if (firstRequest)
@@ -179,26 +196,46 @@ bool CGUILargeTextureManager::GetImage(const std::string &path, CTextureArray &t
 void CGUILargeTextureManager::ReleaseImage(const std::string &path, bool immediately)
 {
   std::unique_lock<CCriticalSection> lock(m_listSection);
-  for (listIterator it = m_allocated.begin(); it != m_allocated.end(); ++it)
+
+  // O(1) lookup in allocated textures
+  auto allocIt = m_allocatedLookup.find(path);
+  if (allocIt != m_allocatedLookup.end())
   {
-    CLargeTexture *image = *it;
-    if (image->GetPath() == path)
+    CLargeTexture *image = allocIt->second;
+    if (image->DecrRef(immediately) && immediately)
     {
-      if (image->DecrRef(immediately) && immediately)
-        m_allocated.erase(it);
-      return;
+      m_allocatedLookup.erase(allocIt);
+      // Also remove from vector
+      for (listIterator it = m_allocated.begin(); it != m_allocated.end(); ++it)
+      {
+        if (*it == image)
+        {
+          m_allocated.erase(it);
+          break;
+        }
+      }
     }
+    return;
   }
-  for (queueIterator it = m_queued.begin(); it != m_queued.end(); ++it)
+
+  // O(1) lookup in queued textures
+  auto queueIt = m_queuedLookup.find(path);
+  if (queueIt != m_queuedLookup.end())
   {
-    unsigned int id = it->first;
-    CLargeTexture *image = it->second;
-    if (image->GetPath() == path && image->DecrRef(true))
+    CLargeTexture *image = queueIt->second;
+    if (image->DecrRef(true))
     {
-      // cancel this job
-      CServiceBroker::GetJobManager()->CancelJob(id);
-      m_queued.erase(it);
-      return;
+      // Find and cancel the job, remove from queue vector
+      for (queueIterator it = m_queued.begin(); it != m_queued.end(); ++it)
+      {
+        if (it->second == image)
+        {
+          CServiceBroker::GetJobManager()->CancelJob(it->first);
+          m_queued.erase(it);
+          break;
+        }
+      }
+      m_queuedLookup.erase(queueIt);
     }
   }
 }
@@ -210,14 +247,13 @@ void CGUILargeTextureManager::QueueImage(const std::string &path, bool useCache)
     return;
 
   std::unique_lock<CCriticalSection> lock(m_listSection);
-  for (queueIterator it = m_queued.begin(); it != m_queued.end(); ++it)
+
+  // O(1) lookup to check if already queued
+  auto it = m_queuedLookup.find(path);
+  if (it != m_queuedLookup.end())
   {
-    CLargeTexture *image = it->second;
-    if (image->GetPath() == path)
-    {
-      image->AddRef();
-      return; // already queued
-    }
+    it->second->AddRef();
+    return; // already queued
   }
 
   // queue the item
@@ -225,6 +261,7 @@ void CGUILargeTextureManager::QueueImage(const std::string &path, bool useCache)
   unsigned int jobID = CServiceBroker::GetJobManager()->AddJob(new CImageLoader(path, useCache),
                                                                this, CJob::PRIORITY_NORMAL);
   m_queued.emplace_back(jobID, image);
+  m_queuedLookup[path] = image;
 }
 
 void CGUILargeTextureManager::OnJobComplete(unsigned int jobID, bool success, CJob *job)
@@ -239,8 +276,13 @@ void CGUILargeTextureManager::OnJobComplete(unsigned int jobID, bool success, CJ
       CLargeTexture *image = it->second;
       image->SetTexture(std::move(loader->m_texture));
       loader->m_texture = NULL; // we want to keep the texture, and jobs are auto-deleted.
+
+      // Move from queued to allocated - update both containers and lookup maps
+      const std::string& path = image->GetPath();
+      m_queuedLookup.erase(path);
       m_queued.erase(it);
       m_allocated.push_back(image);
+      m_allocatedLookup[path] = image;
       return;
     }
   }

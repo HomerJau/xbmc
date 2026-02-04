@@ -45,9 +45,15 @@ void CGUIBorderedImage::Process(unsigned int currentTime, CDirtyRegionList &dirt
                        m_texture->GetXPosition() + m_texture->GetWidth(),
                        m_texture->GetYPosition() + m_texture->GetHeight());
     rect.Intersect(m_texture->GetRenderRect());
-    m_borderImage->SetPosition(rect.x1 - m_borderSize.x1, rect.y1 - m_borderSize.y1);
-    m_borderImage->SetWidth(rect.Width() + m_borderSize.x1 + m_borderSize.x2);
-    m_borderImage->SetHeight(rect.Height() + m_borderSize.y1 + m_borderSize.y2);
+
+    if (m_lastBorderRect != rect)
+    {
+      m_borderImage->SetPosition(rect.x1 - m_borderSize.x1, rect.y1 - m_borderSize.y1);
+      m_borderImage->SetWidth(rect.Width() + m_borderSize.x1 + m_borderSize.x2);
+      m_borderImage->SetHeight(rect.Height() + m_borderSize.y1 + m_borderSize.y2);
+      m_lastBorderRect = rect;
+    }
+
     m_borderImage->SetDiffuseColor(m_diffuseColor);
     if (m_borderImage->Process(currentTime))
       MarkDirtyRegion();
@@ -56,9 +62,17 @@ void CGUIBorderedImage::Process(unsigned int currentTime, CDirtyRegionList &dirt
 
 void CGUIBorderedImage::Render()
 {
+  bool renderFrontToBack = CServiceBroker::GetWinSystem()->GetGfxContext().GetRenderOrder() ==
+                           RENDER_ORDER_FRONT_TO_BACK;
+
+  if (renderFrontToBack)
+    CGUIImage::Render();
+
   if (!m_borderImage->GetFileName().empty() && m_texture->ReadyToRender())
-    m_borderImage->Render();
-  CGUIImage::Render();
+    m_borderImage->Render(-1);
+
+  if (!renderFrontToBack)
+    CGUIImage::Render();
 }
 
 CRect CGUIBorderedImage::CalcRenderRegion() const
@@ -71,12 +85,14 @@ void CGUIBorderedImage::AllocResources()
 {
   m_borderImage->AllocResources();
   CGUIImage::AllocResources();
+  m_lastBorderRect.reset();
 }
 
 void CGUIBorderedImage::FreeResources(bool immediately)
 {
   m_borderImage->FreeResources(immediately);
   CGUIImage::FreeResources(immediately);
+  m_lastBorderRect.reset();
 }
 
 void CGUIBorderedImage::DynamicResourceAlloc(bool bOnOff)

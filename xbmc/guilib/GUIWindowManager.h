@@ -16,6 +16,7 @@
 #include "messaging/IMessageTarget.h"
 
 #include <list>
+#include <memory>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -66,6 +67,7 @@ public:
   void ChangeActiveWindow(int iNewID, const std::string &strPath = "");
   void ActivateWindow(int iWindowID, const std::vector<std::string>& params, bool swappingWindows = false, bool force = false);
   void PreviousWindow();
+  bool HasVisibleDialog() const { return !m_activeDialogs.empty(); }
 
   /**
    * \brief Switch window to fullscreen
@@ -232,6 +234,12 @@ public:
 #endif
 private:
   void RenderPass() const;
+  /*! \brief Render in one back to front pass.
+   */
+  void RenderPassSingle() const;
+  /*! \brief Render opaque elements front to back, and transparent ones back to front
+   */
+  void RenderPassDual() const;
 
   void LoadNotOnDemandWindows();
   void UnloadNotOnDemandWindows();
@@ -264,10 +272,10 @@ private:
 
   bool HandleAction(const CAction &action) const;
 
-  std::unordered_map<int, CGUIWindow*> m_mapWindows;
-  std::vector<CGUIWindow*> m_vecCustomWindows;
-  std::vector<CGUIWindow*> m_activeDialogs;
-  std::vector<CGUIWindow*> m_deleteWindows;
+  std::unordered_map<int, std::shared_ptr<CGUIWindow>> m_mapWindows;
+  std::vector<std::shared_ptr<CGUIWindow>> m_vecCustomWindows;
+  std::vector<std::shared_ptr<CGUIWindow>> m_activeDialogs;
+  std::vector<std::shared_ptr<CGUIWindow>> m_deleteWindows;
 
   std::deque<int> m_windowHistory;
 

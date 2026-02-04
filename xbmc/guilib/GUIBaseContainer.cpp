@@ -30,6 +30,7 @@
 #include "utils/XBMCTinyXML.h"
 #include "utils/log.h"
 
+#include <algorithm>
 #include <memory>
 
 using namespace KODI;
@@ -145,10 +146,8 @@ void CGUIBaseContainer::Process(unsigned int currentTime, CDirtyRegionList &dirt
 
   if (!m_layout || !m_focusedLayout) return;
 
+  // UpdateScrollOffset already marks dirty region when scroller is active
   UpdateScrollOffset(currentTime);
-
-  if (m_scroller.IsScrolling())
-    MarkDirtyRegion();
 
   int offset = (int)floorf(m_scroller.GetValue() / m_layout->Size(m_orientation));
 
@@ -285,6 +284,9 @@ void CGUIBaseContainer::Render()
     float focusedPos = 0;
     std::shared_ptr<CGUIListItem> focusedItem;
     int current = offset - cacheBefore;
+
+    // Reuse cached vector to avoid per-frame allocation
+    m_renderItems.clear();
     while (pos < end && m_items.size())
     {
       int itemNo = CorrectOffset(current, 0);
@@ -303,9 +305,9 @@ void CGUIBaseContainer::Render()
         else
         {
           if (m_orientation == VERTICAL)
-            RenderItem(origin.x, pos, item.get(), false);
+            m_renderItems.emplace_back(RENDERITEM{origin.x, pos, item, false});
           else
-            RenderItem(pos, origin.y, item.get(), false);
+            m_renderItems.emplace_back(RENDERITEM{pos, origin.y, item, false});
         }
       }
       // increment our position
@@ -316,9 +318,25 @@ void CGUIBaseContainer::Render()
     if (focusedItem)
     {
       if (m_orientation == VERTICAL)
-        RenderItem(origin.x, focusedPos, focusedItem.get(), true);
+        m_renderItems.emplace_back(RENDERITEM{origin.x, focusedPos, focusedItem, true});
       else
-        RenderItem(focusedPos, origin.y, focusedItem.get(), true);
+        m_renderItems.emplace_back(RENDERITEM{focusedPos, origin.y, focusedItem, true});
+    }
+
+    if (CServiceBroker::GetWinSystem()->GetGfxContext().GetRenderOrder() ==
+        RENDER_ORDER_FRONT_TO_BACK)
+    {
+      for (auto it = std::crbegin(m_renderItems); it != std::crend(m_renderItems); it++)
+      {
+        RenderItem(it->posX, it->posY, it->item.get(), it->focused);
+      }
+    }
+    else
+    {
+      for (const auto& renderitem : m_renderItems)
+      {
+        RenderItem(renderitem.posX, renderitem.posY, renderitem.item.get(), renderitem.focused);
+      }
     }
 
     CServiceBroker::GetWinSystem()->GetGfxContext().RestoreClipRegion();
@@ -611,30 +629,26 @@ void CGUIBaseContainer::OnRight()
 
 void CGUIBaseContainer::OnNextLetter()
 {
-  int offset = CorrectOffset(GetOffset(), GetCursor());
-  for (unsigned int i = 0; i < m_letterOffsets.size(); i++)
-  {
-    if (m_letterOffsets[i].first > offset)
-    {
-      SelectItem(m_letterOffsets[i].first);
-      return;
-    }
-  }
+  const int offset = CorrectOffset(GetOffset(), GetCursor());
+  // Binary search for first letter offset greater than current position
+  auto it = std::upper_bound(m_letterOffsets.begin(), m_letterOffsets.end(), offset,
+                             [](int value, const std::pair<int, std::string>& elem)
+                             { return value < elem.first; });
+  if (it != m_letterOffsets.end())
+    SelectItem(it->first);
 }
 
 void CGUIBaseContainer::OnPrevLetter()
 {
-  int offset = CorrectOffset(GetOffset(), GetCursor());
-  if (!m_letterOffsets.size())
+  const int offset = CorrectOffset(GetOffset(), GetCursor());
+  if (m_letterOffsets.empty())
     return;
-  for (int i = (int)m_letterOffsets.size() - 1; i >= 0; i--)
-  {
-    if (m_letterOffsets[i].first < offset)
-    {
-      SelectItem(m_letterOffsets[i].first);
-      return;
-    }
-  }
+  // Binary search for last letter offset less than current position
+  auto it = std::lower_bound(m_letterOffsets.begin(), m_letterOffsets.end(), offset,
+                             [](const std::pair<int, std::string>& elem, int value)
+                             { return elem.first < value; });
+  if (it != m_letterOffsets.begin())
+    SelectItem((--it)->first);
 }
 
 void CGUIBaseContainer::OnJumpLetter(const std::string& letter, bool skip /*=false*/)
@@ -682,19 +696,22 @@ void CGUIBaseContainer::OnJumpSMS(int letter)
   static const char letterMap[8][6] = { "ABC2", "DEF3", "GHI4", "JKL5", "MNO6", "PQRS7", "TUV8", "WXYZ9" };
 
   // only 2..9 supported
-  if (letter < 2 || letter > 9 || !m_letterOffsets.size())
+  if (letter < 2 || letter > 9 || m_letterOffsets.empty())
     return;
 
   const std::string letters = letterMap[letter - 2];
-  // find where we currently are
-  int offset = CorrectOffset(GetOffset(), GetCursor());
-  unsigned int currentLetter = 0;
-  while (currentLetter + 1 < m_letterOffsets.size() && m_letterOffsets[currentLetter + 1].first <= offset)
-    currentLetter++;
+  // find where we currently are using binary search
+  const int offset = CorrectOffset(GetOffset(), GetCursor());
+  auto it = std::upper_bound(m_letterOffsets.begin(), m_letterOffsets.end(), offset,
+                             [](int value, const std::pair<int, std::string>& elem)
+                             { return value < elem.first; });
+  // upper_bound gives us the first element > offset, we want the last element <= offset
+  if (it != m_letterOffsets.begin())
+    --it;
 
   // now switch to the next letter
-  std::string current = m_letterOffsets[currentLetter].second;
-  size_t startPos = (letters.find(current) + 1) % letters.size();
+  const std::string current = it->second;
+  const size_t startPos = (letters.find(current) + 1) % letters.size();
   // now jump to letters[startPos], or another one in the same range if possible
   size_t pos = startPos;
   while (true)
@@ -1046,6 +1063,37 @@ void CGUIBaseContainer::UpdateVisibility(const CGUIListItem *item)
   UpdateListProvider();
 }
 
+void CGUIBaseContainer::AssignDepth()
+{
+  std::shared_ptr<CGUIListItem> focusedItem = nullptr;
+  int32_t current = 0;
+
+  for (const auto& item : m_items)
+  {
+    bool focused = (current == GetOffset() + GetCursor());
+    if (focused)
+    {
+      focusedItem = item;
+    }
+    else
+    {
+      if (item->GetFocusedLayout())
+        item->GetFocusedLayout()->AssignDepth();
+      if (item->GetLayout())
+        item->GetLayout()->AssignDepth();
+    }
+    current++;
+  }
+
+  if (focusedItem)
+  {
+    if (focusedItem->GetFocusedLayout())
+      focusedItem->GetFocusedLayout()->AssignDepth();
+    if (focusedItem->GetLayout())
+      focusedItem->GetLayout()->AssignDepth();
+  }
+}
+
 void CGUIBaseContainer::UpdateListProvider(bool forceRefresh /* = false */)
 {
   if (m_listProvider)
@@ -1122,6 +1170,9 @@ void CGUIBaseContainer::CalculateLayout()
 
   m_itemsPerPage = std::max((int)((Size() - m_focusedLayout->Size(m_orientation)) / m_layout->Size(m_orientation)) + 1, 1);
 
+  // Pre-allocate render items vector to avoid per-frame allocations
+  m_renderItems.reserve(m_itemsPerPage + m_cacheItems * 2 + 1);
+
   // ensure that the scroll offset is a multiple of our size
   m_scroller.SetValue(GetOffset() * m_layout->Size(m_orientation));
 }
@@ -1129,6 +1180,7 @@ void CGUIBaseContainer::CalculateLayout()
 void CGUIBaseContainer::UpdateScrollByLetter()
 {
   m_letterOffsets.clear();
+  m_letterOffsets.reserve(30); // Pre-allocate for typical alphabet size
 
   // for scrolling by letter we have an offset table into our vector.
   std::string currentMatch;
