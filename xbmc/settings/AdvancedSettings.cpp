@@ -1219,7 +1219,12 @@ void CAdvancedSettings::ParseSettingsFile(const std::string &file)
     XMLUtils::GetBoolean(pElement, "visualizedirtyregions", m_guiVisualizeDirtyRegions);
     XMLUtils::GetInt(pElement, "algorithmdirtyregions",     m_guiAlgorithmDirtyRegions);
     XMLUtils::GetBoolean(pElement, "smartredraw", m_guiSmartRedraw);
+    XMLUtils::GetInt(pElement, "anisotropicfiltering", m_guiAnisotropicFiltering);
+    XMLUtils::GetBoolean(pElement, "fronttobackrendering", m_guiFrontToBackRendering);
+    XMLUtils::GetBoolean(pElement, "geometryclear", m_guiGeometryClear);
+    XMLUtils::GetBoolean(pElement, "asynctextureupload", m_guiAsyncTextureUpload);
     XMLUtils::GetBoolean(pElement, "transparentvideolayout", m_guiVideoLayoutTransparent);
+    XMLUtils::GetUInt(pElement, "avchangeflagtimeout", m_guiAVChangeFlagTimeout);
   }
 
   std::string seekSteps;

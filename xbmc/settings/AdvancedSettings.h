@@ -333,6 +333,12 @@ class CAdvancedSettings : public ISettingCallback, public ISettingsHandler
     int  m_guiAlgorithmDirtyRegions;
     bool m_guiSmartRedraw;
     bool m_guiVideoLayoutTransparent{false};
+	unsigned int m_guiAVChangeFlagTimeout;
+
+    int32_t m_guiAnisotropicFiltering{0};
+    bool m_guiFrontToBackRendering{false};
+    bool m_guiGeometryClear{true};
+    bool m_guiAsyncTextureUpload{false};
     unsigned int m_addonPackageFolderSize;
 
     bool m_jsonOutputCompact;
