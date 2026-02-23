@@ -160,7 +160,8 @@ void AddLocalItemArtwork(KODI::ART::Artwork& itemArt,
                          const std::vector<std::string>& wantedArtTypes,
                          const std::string& itemPath,
                          bool addAll,
-                         bool exactName)
+                         bool exactName,
+                         bool isInFolder)
 {
   std::string path = URIUtils::GetDirectory(itemPath);
   if (path.empty())
@@ -189,7 +190,7 @@ void AddLocalItemArtwork(KODI::ART::Artwork& itemArt,
                          (caseSensitive ? StringUtils::StartsWith(candidate, baseFilename)
                                         : StringUtils::StartsWithNoCase(candidate, baseFilename))};
 
-    if (!baseFilename.empty() && !matchesFilename)
+    if (!baseFilename.empty() && !matchesFilename && !isInFolder)
       continue;
 
     if (matchesFilename)
@@ -487,7 +488,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
         // force sorting consistency to avoid hash mismatch between platforms
         // sort by filename as always present for any files, but keep case sensitivity
-        items.Sort(SortByFile, SortOrderAscending, SortAttributeNone);
+        items.Sort(SortByFile, SortOrder::ASCENDING, SortAttributeNone);
 
         // check whether to re-use previously computed fast hash
         if (!CanFastHash(items, regexps) || fastHash.empty())
@@ -537,7 +538,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
         // force sorting consistency to avoid hash mismatch between platforms
         // sort by filename as always present for any files, but keep case sensitivity
-        items.Sort(SortByFile, SortOrderAscending, SortAttributeNone);
+        items.Sort(SortByFile, SortOrder::ASCENDING, SortAttributeNone);
 
         GetPathHash(items, hash);
         bSkip = true;
@@ -662,7 +663,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
       // Look for local art files first
       const std::vector<std::string> movieSetArtTypes =
           CVideoThumbLoader::GetArtTypes(MediaTypeVideoCollection);
-      AddLocalItemArtwork(movieSetArt, movieSetArtTypes, movieSetInfoPath, true, false);
+      AddLocalItemArtwork(movieSetArt, movieSetArtTypes, movieSetInfoPath, true, false, true);
 
       // If art specified in set.nfo use that next
       if (movieSetArt.empty() && tag.m_set.HasArt())
@@ -850,13 +851,14 @@ CVideoInfoScanner::~CVideoInfoScanner()
       if (isSeason && idTvShow > -1)
         idSeason = m_database.GetSeasonId(idTvShow, pItem->GetVideoInfoTag()->m_iSeason);
     }
-    if (idTvShow > -1 && (!isSeason || idSeason > -1) && (fetchEpisodes || !pItem->IsFolder()))
-    {
-      InfoRet ret = RetrieveInfoForEpisodes(pItem, idTvShow, info2, useLocal, pDlgProgress);
-      if (ret == InfoRet::ADDED)
-        m_database.SetPathHash(strPath, pItem->GetProperty("hash").asString());
-      return ret;
-    }
+
+    // Enumerate episodes here as this compares hashes of folders containing episodes from this show
+    //  and we want to do this before processing nfo files
+    EPISODELIST files;
+    if (!EnumerateSeriesFolder(pItem, files))
+      return InfoRet::HAVE_ALREADY;
+    if (files.empty()) // no update or no files
+      return InfoRet::NOT_NEEDED;
 
     if (ProgressCancelled(pDlgProgress, pItem->IsFolder() ? 20353 : 20361,
                           pItem->IsFolder() ? pItem->GetVideoInfoTag()->m_strShowTitle
@@ -873,7 +875,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
     if (useLocal)
       std::tie(result, loader) = ReadInfoTag(*pItem, info2, bDirNames, true);
 
-    if (result == InfoType::FULL)
+    if (result == InfoType::FULL && idTvShow < 0)
     {
 
       long lResult = AddVideo(pItem, info2, bDirNames, useLocal);
@@ -881,7 +883,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
         return InfoRet::INFO_ERROR;
       if (fetchEpisodes)
       {
-        InfoRet ret = RetrieveInfoForEpisodes(pItem, lResult, info2, useLocal, pDlgProgress);
+        InfoRet ret = RetrieveInfoForEpisodes(pItem, lResult, files, info2, useLocal, pDlgProgress);
         if (ret == InfoRet::ADDED)
           m_database.SetPathHash(pItem->GetPath(), pItem->GetProperty("hash").asString());
         return ret;
@@ -892,6 +894,15 @@ CVideoInfoScanner::~CVideoInfoScanner()
     {
       scrUrl = loader->ScraperUrl();
       pURL = &scrUrl;
+    }
+
+    // Process episodes added later after nfo is scanned in case there is an episode group and parsing url
+    if (idTvShow > -1 && (!isSeason || idSeason > -1) && (fetchEpisodes || !pItem->IsFolder()))
+    {
+      InfoRet ret = RetrieveInfoForEpisodes(pItem, idTvShow, files, info2, useLocal, pDlgProgress);
+      if (ret == InfoRet::ADDED)
+        m_database.SetPathHash(strPath, pItem->GetProperty("hash").asString());
+      return ret;
     }
 
     CScraperUrl url;
@@ -922,7 +933,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
         if (fetchEpisodes)
         {
           InfoRet ret =
-              RetrieveInfoForEpisodes(pItem, lResult, info2, useLocal, pDlgProgress, true);
+              RetrieveInfoForEpisodes(pItem, lResult, files, info2, useLocal, pDlgProgress, true);
           if (ret == InfoRet::ADDED)
           {
             m_database.SetPathHash(pItem->GetPath(), pItem->GetProperty("hash").asString());
@@ -951,7 +962,8 @@ CVideoInfoScanner::~CVideoInfoScanner()
     }
     if (fetchEpisodes)
     {
-      InfoRet ret = RetrieveInfoForEpisodes(pItem, lResult, info2, useLocal, pDlgProgress, true);
+      InfoRet ret =
+          RetrieveInfoForEpisodes(pItem, lResult, files, info2, useLocal, pDlgProgress, true);
       if (ret == InfoRet::ADDED)
         m_database.SetPathHash(pItem->GetPath(), pItem->GetProperty("hash").asString());
     }
@@ -1218,18 +1230,12 @@ CVideoInfoScanner::~CVideoInfoScanner()
 
   CInfoScanner::InfoRet CVideoInfoScanner::RetrieveInfoForEpisodes(CFileItem* item,
                                                                    long showID,
+                                                                   EPISODELIST& files,
                                                                    const ADDON::ScraperPtr& scraper,
                                                                    bool useLocal,
                                                                    CGUIDialogProgress* progress,
                                                                    bool alreadyHasArt /* = false */)
   {
-    // enumerate episodes
-    EPISODELIST files;
-    if (!EnumerateSeriesFolder(item, files))
-      return InfoRet::HAVE_ALREADY;
-    if (files.empty()) // no update or no files
-      return InfoRet::NOT_NEEDED;
-
     if (m_bStop || (progress && progress->IsCanceled()))
       return InfoRet::CANCELLED;
 
@@ -1330,7 +1336,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
         {
           // force sorting consistency to avoid hash mismatch between platforms
           // sort by filename as always present for any files, but keep case sensitivity
-          items.Sort(SortByFile, SortOrderAscending, SortAttributeNone);
+          items.Sort(SortByFile, SortOrder::ASCENDING, SortAttributeNone);
           GetPathHash(items, hash);
           if (StringUtils::EqualsNoCase(dbHash, hash))
           {
@@ -1381,7 +1387,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
     */
 
     // since we're doing this now anyway, should other items be stacked?
-    items.Sort(SortByPath, SortOrderAscending);
+    items.Sort(SortByPath, SortOrder::ASCENDING);
 
     // If found VIDEO_TS.IFO or INDEX.BDMV then we are dealing with Blu-ray or DVD files on disc
     // somewhere in the directory tree. Assume that all other files/folders in the same folder
@@ -2188,7 +2194,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
           std::string filename = ART::GetLocalArtBaseFilename(*pItem, useFolder);
           std::string directory = URIUtils::GetDirectory(filename);
           if (filename != directory)
-            AddLocalItemArtwork(art, artTypes, filename, addAll, exactName);
+            AddLocalItemArtwork(art, artTypes, filename, addAll, exactName, bApplyToDir);
         }
 
         // Reset useFolder to false as GetLocalArtBaseFilename may modify it in
@@ -2212,7 +2218,7 @@ CVideoInfoScanner::~CVideoInfoScanner()
         }
         else
           path = ART::GetLocalArtBaseFilename(*pItem, useFolder);
-        AddLocalItemArtwork(art, artTypes, path, addAll, exactName);
+        AddLocalItemArtwork(art, artTypes, path, addAll, exactName, bApplyToDir);
       }
 
       if (moviePartOfSet)
@@ -2221,7 +2227,8 @@ CVideoInfoScanner::~CVideoInfoScanner()
         if (!movieSetInfoPath.empty())
         {
           KODI::ART::Artwork movieSetArt;
-          AddLocalItemArtwork(movieSetArt, movieSetArtTypes, movieSetInfoPath, addAll, exactName);
+          AddLocalItemArtwork(movieSetArt, movieSetArtTypes, movieSetInfoPath, addAll, exactName,
+                              true);
           for (const auto& artItem : movieSetArt)
           {
             art["set." + artItem.first] = artItem.second;
@@ -2779,9 +2786,8 @@ CVideoInfoScanner::~CVideoInfoScanner()
         else
           basePath = StringUtils::Format("season{:02}", season);
 
-        AddLocalItemArtwork(art, artTypes,
-          URIUtils::AddFileToFolder(show.m_strPath, basePath),
-          addAll, exactName);
+        AddLocalItemArtwork(art, artTypes, URIUtils::AddFileToFolder(show.m_strPath, basePath),
+                            addAll, exactName, false);
 
         seasonArt[season] = art;
       }

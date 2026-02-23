@@ -340,7 +340,7 @@ void CMusicInfoScanner::FetchAlbumInfo(const std::string& strDirectory,
   if (strDirectory.empty())
   {
     m_musicDatabase.Open();
-    m_musicDatabase.GetAlbumsNav("musicdb://albums/", items);
+    m_musicDatabase.GetAlbumsNav("musicdb://albums/", items, SortDescription());
     m_musicDatabase.Close();
   }
   else
@@ -402,7 +402,10 @@ void CMusicInfoScanner::FetchArtistInfo(const std::string& strDirectory,
   if (strDirectory.empty())
   {
     m_musicDatabase.Open();
-    m_musicDatabase.GetArtistsNav("musicdb://artists/", items, !CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(CSettings::SETTING_MUSICLIBRARY_SHOWCOMPILATIONARTISTS), -1);
+    const auto settings = CServiceBroker::GetSettingsComponent()->GetSettings();
+    m_musicDatabase.GetArtistsNav(
+        "musicdb://artists/", items, SortDescription(),
+        !settings->GetBool(CSettings::SETTING_MUSICLIBRARY_SHOWCOMPILATIONARTISTS), -1);
     m_musicDatabase.Close();
   }
   else
@@ -507,7 +510,7 @@ bool CMusicInfoScanner::DoScan(const std::string& strDirectory)
   // sort and get the path hash.  Note that we don't filter .cue sheet items here as we want
   // to detect changes in the .cue sheet as well.  The .cue sheet items only need filtering
   // if we have a changed hash.
-  items.Sort(SortByLabel, SortOrderAscending);
+  items.Sort(SortByLabel, SortOrder::ASCENDING);
   std::string hash;
   GetPathHash(items, hash);
 
@@ -528,7 +531,7 @@ bool CMusicInfoScanner::DoScan(const std::string& strDirectory)
 
     // filter items in the sub dir (for .cue sheet support)
     items.FilterCueItems();
-    items.Sort(SortByLabel, SortOrderAscending);
+    items.Sort(SortByLabel, SortOrder::ASCENDING);
 
     // and then scan in the new information from tags
     if (RetrieveMusicInfo(strDirectory, items) > 0)

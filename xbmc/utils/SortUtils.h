@@ -11,6 +11,7 @@
 #include "DatabaseUtils.h"
 #include "LabelFormatter.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -18,11 +19,12 @@
 
 enum class SortMethod;
 
-typedef enum {
-  SortOrderNone = 0,
-  SortOrderAscending,
-  SortOrderDescending
-} SortOrder;
+enum class SortOrder
+{
+  NONE,
+  ASCENDING,
+  DESCENDING,
+};
 
 typedef enum
 {
@@ -34,11 +36,12 @@ typedef enum
   SortAttributeForceConsiderFolders = 0x10, // overrides SortAttributeIgnoreFolders
 } SortAttribute;
 
-typedef enum {
-  SortSpecialNone     = 0,
-  SortSpecialOnTop    = 1,
-  SortSpecialOnBottom = 2
-} SortSpecial;
+enum class SortSpecial
+{
+  NONE,
+  TOP,
+  BOTTOM
+};
 
 ///
 /// \defgroup List_of_sort_methods List of sort methods
@@ -176,24 +179,24 @@ typedef enum
 } SortBy;
 ///@}
 
-typedef struct SortDescription {
+struct SortDescription
+{
   SortBy sortBy = SortByNone;
-  SortOrder sortOrder = SortOrderAscending;
+  SortOrder sortOrder = SortOrder::ASCENDING;
   SortAttribute sortAttributes = SortAttributeNone;
   int limitStart = 0;
   int limitEnd = -1;
-} SortDescription;
+};
 
-typedef struct GUIViewSortDetails
+struct GUIViewSortDetails
 {
   SortDescription m_sortDescription;
   int m_buttonLabel;
   LABEL_MASKS m_labelMasks;
-} GUIViewSortDetails;
+};
 
-typedef DatabaseResult SortItem;
-typedef std::shared_ptr<SortItem> SortItemPtr;
-typedef std::vector<SortItemPtr> SortItems;
+using SortItem = DatabaseResult;
+using SortItems = std::vector<std::shared_ptr<SortItem>>;
 
 class SortUtils
 {
@@ -225,9 +228,10 @@ public:
   static const Fields& GetFieldsForSorting(SortBy sortBy);
   static std::string RemoveArticles(const std::string &label);
 
-  typedef std::string (*SortPreparator) (SortAttribute, const SortItem&);
-  typedef bool (*Sorter) (const DatabaseResult &, const DatabaseResult &);
-  typedef bool (*SorterIndirect) (const SortItemPtr &, const SortItemPtr &);
+  using SortPreparator = std::function<std::string(SortAttribute, const SortItem&)>;
+  using Sorter = std::function<bool(const SortItem&, const SortItem&)>;
+  using SorterIndirect =
+      std::function<bool(const std::shared_ptr<SortItem>&, const std::shared_ptr<SortItem>&)>;
 
 private:
   static const SortPreparator& getPreparator(SortBy sortBy);
