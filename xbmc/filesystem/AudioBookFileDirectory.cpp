@@ -343,7 +343,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 		 else if (key == "YEAR" || key == "DATE_RECORDED")
 		   item->GetMusicInfoTag()->SetReleaseDate(value);
 		 else if (key == "ORIGYEAR" || key == "ORIGINALYEAR" || key == "DATE_RELEASED")
-		   item->GetMusicInfoTag()->SetOriginalDate(tag->value);
+		   item->GetMusicInfoTag()->SetOriginalDate(value);
 		 else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
 		   item->GetMusicInfoTag()->SetDiscSubtitle(value);
 		 else if (key == "COMMENT")
@@ -366,10 +366,11 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 		   AddCommaDelimitedString(tagdata, separators, *item->GetMusicInfoTag());
 		 }
 		 // comma separated list of role, person
-		 else if (key == "INVOLVEDPEOPLE")
-		 {
-		   tagdata = StringUtils::Split(value, ",");
-		   AddCommaDelimitedString(tagdata, separators, *item->GetMusicInfoTag());
+         else if (key == "INVOLVEDPEOPLE")
+         {
+           tagdata = StringUtils::Split(value, ",");
+           AddCommaDelimitedString(tagdata, separators, *item->GetMusicInfoTag());
+         }
       }
       /* The comma separated lists are outside the Matroska spec
          (see https://www.matroska.org/technical/tagging.html) as it states to use multiple simple
