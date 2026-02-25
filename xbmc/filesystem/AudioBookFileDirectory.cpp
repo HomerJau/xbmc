@@ -63,7 +63,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   std::vector<std::string> artistsort;
   std::vector<std::string> tagdata;
   std::vector<std::string> separators{" feat. ", " ft. ", " Feat. ", " Ft. ",  ";", ":",
-                                      "|",       "#",     "/",       " with ", "&"};
+                                      "|", "#", "/", " with ", "&"};
   const std::string musicsep =
       CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_musicItemSeparator;
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
@@ -75,7 +75,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   const bool isAudioBook = url.IsFileType("m4b");
   // Some tags are relevant to the whole album - these are read first
   CMusicInfoTag albumtag;
-
+   
   AVDictionaryEntry* tag=nullptr;
   while ((tag = av_dict_get(m_fctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
   {
@@ -93,89 +93,85 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     else
     {
       std::string key = StringUtils::ToUpper(tag->key);
-      /* The matroska Tag and chapter editor from https://www.videohelp.com/software/chapterEditor
-         prefaces level 50 tags with the target type (album/concert/episde/movie/etc). That needs
-         removing for the tag processing to work correctly. MKVToolnix & mp3tag correctly target
-         level 50 and do not preface the tag with the target type. We're only interested in albums
-         at this level (50) so strip off the preface if it exists.
-      */
-      if (StringUtils::StartsWith(key, "ALBUM/"))
-        key.erase(0, 6);
-      // track is matroska's discnumber when at level 50 (these tags) as set by mp3tag
-      // part_number is the matroska spec key
-      if (key == "TRACK" || key == "PART_NUMBER")
-        albumtag.SetDiscNumber(std::stoi(tag->value));
-      else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
-        albumtag.SetDiscSubtitle(tag->value);
-      else if (key == "TITLE")
-        albumtag.SetAlbum(tag->value);
-      else if (key == "ALBUM")
-        albumtag.SetAlbum(tag->value);
-      else if (key == "ARTIST")
-        albumtag.SetArtist(tag->value);
-      else if (key == "ARTISTSORT" || key == "ARTIST SORT")
-        albumtag.SetArtistSort(
-            StringUtils::Join(StringUtils::Split(tag->value, separators), musicsep));
-      else if (key == "ALBUMARTIST" || key == "ALBUM ARTIST" || key == "ALBUM_ARTIST")
-        albumtag.SetAlbumArtist(
-            StringUtils::Join(StringUtils::Split(tag->value, separators), musicsep));
-      else if (key == "ALBUMARTSTS" || key == "ALBUM ARTISTS")
-        albumtag.SetAlbumArtist(StringUtils::Split(tag->value, separators));
-      else if (key == "ALBUMARTISTSORT" || key == "ALBUM ARTIST SORT" || key == "SORT_ALBUM_ARTIST")
-        albumtag.SetAlbumArtistSort(
-            StringUtils::Join(StringUtils::Split(tag->value, separators), musicsep));
-      else if (key == "COMPOSERSORT" || key == "COMPOSER SORT")
-        albumtag.SetComposerSort(
-            StringUtils::Join(StringUtils::Split(tag->value, separators), musicsep));
-      else if (key == "MUSICBRAINZ_ARTISTID")
-        albumtag.SetMusicBrainzArtistID(StringUtils::Split(tag->value, separators));
-      else if (key == "MUSICBRAINZ_ALBUMARTISTID" || key == "MUSICBRAINZ ALBUM ARTIST ID")
-        albumtag.SetMusicBrainzAlbumArtistID(StringUtils::Split(tag->value, separators));
-      else if (key == "MUSICBRAINZ_ALBUMARTIST")
-        albumtag.SetAlbumArtist(tag->value);
-      else if (key == "MUSICBRAINZ_ALBUMID" || key == "MUSICBRAINZ ALBUM ID")
-        albumtag.SetMusicBrainzAlbumID(tag->value);
-      else if (key == "MUSICBRAINZ_RELEASEGROUPID" || key == "MUSICBRAINZ RELEASE GROUP ID")
-        albumtag.SetMusicBrainzReleaseGroupID(tag->value);
-      else if (key == "MUSICBRAINZ_ALBUMSTATUS")
-        albumtag.SetAlbumReleaseStatus(tag->value);
-      else if (key == "MUSICBRAINZ_ALBUMTYPE")
-        albumtag.SetMusicBrainzReleaseType(tag->value);
-      else if (key == "COMPILATION")
-        albumtag.SetCompilation(true);
-      else if (key == "PUBLISHER")
-        albumtag.SetRecordLabel(tag->value);
-      // mp3tag info shows year but the value is stored in date_recorded
-      // equates to TDRC in id3v2.4 ISO 8601 yyyy-mm-dd or part thereof
-      else if (key == "YEAR" || key == "DATE_RELEASED") // proper matroska tag is date_released
-        albumtag.SetReleaseDate(tag->value);
-      // ISO 8601 as above. Equates to TDOR in id3v2.4 (set by mp3tag)
-      else if (key == "ORIGYEAR" || key == "DATE_RECORDED")
-        albumtag.SetOriginalDate(tag->value);
-      else if (key == "MOOD")
-        albumtag.SetMood( StringUtils::Join(StringUtils::Split(tag->value, separators), musicsep));
-      // genre could be comma delimited or not. Temporarily add the comma just in case.  true trims
-      // any whitespace around the genre(s)
-      else if (key == "GENRE")
-      {
-        separators.push_back(",");
-        albumtag.SetGenre(StringUtils::Split(tag->value, separators), true);
-        separators.pop_back();
-      }
-      // comma separated list of role, person
-      else if (key == "INVOLVEDPEOPLE" || key == "ACTOR")
-      {
-        tagdata = StringUtils::Split(tag->value, ",");
-        AddCommaDelimitedString(tagdata, separators, albumtag);
-      }
-      else if (key == "DISC")
-        albumtag.SetDiscNumber(std::stoi(tag->value));
-      else if (key == "REMIXED_BY")
-        albumtag.AddArtistRole("Remixer", tag->value);
-      else if (key == "MIXED_BY" || key == "MIXER")
-        albumtag.AddArtistRole("Mixer", tag->value);
-      else if (key == "COMMENT")
-        albumtag.SetComment(tag->value);
+	  std::string value = tag->value;
+	  /* The matroska Tag and chapter editor from https://www.videohelp.com/software/chapterEditor
+		prefaces level 50 tags with the target type (album/concert/episde/movie/etc). That needs
+		removing for the tag processing to work correctly. MKVToolnix & mp3tag correctly target
+		level 50 and do not preface the tag with the target type. We're only interested in albums
+		at this level (50) so strip off the preface if it exists.
+	  */
+	 if (StringUtils::StartsWith(key, "ALBUM/"))
+	   key.erase(0, 6);
+
+	 if (key == "ALBUM")
+       albumtag.SetAlbum(value);
+     else if (key == "ARTIST")
+       albumtag.SetArtist(tag->value);
+     else if (key == "ARTISTSORT" || key == "ARTIST SORT")
+       albumtag.SetArtistSort(
+               StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+     else if (key == "ALBUMARTIST" || key == "ALBUM ARTIST" || key == "ALBUM_ARTIST")
+       albumtag.SetAlbumArtist(value);
+	 else if (key == "ALBUMARTSTS" || key == "ALBUM ARTISTS")
+       albumtag.SetAlbumArtist(StringUtils::Split(value, separators));
+	 else if (key == "ALBUMARTISTSORT" || key == "ALBUM ARTIST SORT" || key == "SORT_ALBUM_ARTIST")
+	   albumtag.SetAlbumArtistSort(
+		   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+	 else if (key == "COMPOSERSORT" || key == "COMPOSER SORT")
+	   albumtag.SetComposerSort(
+		   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+	 else if (key == "MUSICBRAINZ_ARTISTID")
+	   albumtag.SetMusicBrainzArtistID(StringUtils::Split(value, separators));
+	 else if (key == "MUSICBRAINZ_ALBUMARTISTID" || key == "MUSICBRAINZ ALBUM ARTIST ID")
+	   albumtag.SetMusicBrainzAlbumArtistID(StringUtils::Split(value, separators));
+	 else if (key == "MUSICBRAINZ_ALBUMARTIST")
+	   albumtag.SetAlbumArtist(value);
+	 else if (key == "MUSICBRAINZ_ALBUMID" || key == "MUSICBRAINZ ALBUM ID")
+	   albumtag.SetMusicBrainzAlbumID(value);
+	 else if (key == "MUSICBRAINZ_RELEASEGROUPID" || key == "MUSICBRAINZ RELEASE GROUP ID")
+	   albumtag.SetMusicBrainzReleaseGroupID(value);
+	 else if (key == "MUSICBRAINZ TRACKID" || key == "MUSICBRAINZ_TRACKID")
+	   albumtag.SetMusicBrainzTrackID(value);
+	 else if (key == "MUSICBRAINZ_ALBUMSTATUS")
+	   albumtag.SetAlbumReleaseStatus(value);
+	 else if (key == "MUSICBRAINZ_ALBUMTYPE")
+	   albumtag.SetMusicBrainzReleaseType(value);
+	 else if (key == "COMPILATION")
+	   albumtag.SetCompilation(true);
+	 else if (key == "PUBLISHER")
+	   albumtag.SetRecordLabel(value);
+	 else if (key == "DATE" || key == "YEAR" || key == "DATE_RELEASED") 
+	   albumtag.SetReleaseDate(value);
+	 else if (key == "ORIGINALYEAR " || key == "DATE_RECORDED")
+	   albumtag.SetOriginalDate(value);
+	 else if (key == "MOOD")
+	   albumtag.SetMood(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+	 // genre could be comma delimited or not. Temporarily add the comma just in case.  true trims
+	 // any whitespace around the genre(s)
+	 else if (key == "GENRE")
+	 {
+	   separators.push_back(",");
+	   albumtag.SetGenre(StringUtils::Split(value, separators), true);
+	   separators.pop_back();
+	 }
+	 // comma separated list of role, person
+	 else if (key == "INVOLVEDPEOPLE" || key == "ACTOR")
+	 {
+	   tagdata = StringUtils::Split(tag->value, ",");
+	   AddCommaDelimitedString(tagdata, separators, albumtag);
+	 }
+     else if (key == "TRACK" || key == "PART_NUMBER")
+           albumtag.SetDiscNumber(std::stoi(value));
+     else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
+           albumtag.SetDiscSubtitle(value);
+	 else if (key == "DISC" || key == "DISCNUMBER")
+	   albumtag.SetDiscNumber(std::stoi(value));
+	 else if (key == "REMIXEDBY" || key == "REMIXED_BY")
+	   albumtag.AddArtistRole("Remixer", value);
+	 else if (key == "MIXED_BY" || key == "MIXER")
+	   albumtag.AddArtistRole("Mixer", value);
+	 else if (key == "COMMENT")
+	   albumtag.SetComment(value);
     }
   }
 
@@ -307,108 +303,73 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       }
       else
       {
-        std::string key = StringUtils::ToUpper(tag->key);
-        if (key == "TITLE")
-          item->GetMusicInfoTag()->SetTitle(tag->value);
-        else if (key == "ARTIST")
-          item->GetMusicInfoTag()->SetArtist(tag->value);
-        else if (key == "MUSICBRAINZ_TRACKID")
-          item->GetMusicInfoTag()->SetMusicBrainzTrackID(tag->value);
-        else if (key == "ARTISTSORT" || key == "ARTIST SORT")
-          item->GetMusicInfoTag()->SetArtistSort(
-              StringUtils::Join(StringUtils::Split(tag->value, separators), musicsep));
-        else if (key == "ALBUMARTIST" || key == "ALBUM ARTIST")
-          item->GetMusicInfoTag()->SetAlbumArtist(
-              StringUtils::Join(StringUtils::Split(tag->value, separators), musicsep));
-        else if (key == "ALBUMARTSTS" || key == "ALBUM ARTISTS")
-          item->GetMusicInfoTag()->SetAlbumArtist(StringUtils::Split(tag->value, separators));
-        else if (key == "ALBUMARTISTSORT" || key == "ALBUM ARTIST SORT")
-          item->GetMusicInfoTag()->SetAlbumArtistSort(
-              StringUtils::Join(StringUtils::Split(tag->value, separators), musicsep));
-        else if (key == "COMPOSERSORT" || key == "COMPOSER SORT")
-          item->GetMusicInfoTag()->SetComposerSort(
-              StringUtils::Join(StringUtils::Split(tag->value, separators), musicsep));
-        else if (key == "MUSICBRAINZ_ARTISTID")
-          item->GetMusicInfoTag()->SetMusicBrainzArtistID(
-              StringUtils::Split(tag->value, separators));
-        else if (key == "MUSICBRAINZ_ALBUMARTISTID")
-          item->GetMusicInfoTag()->SetMusicBrainzAlbumArtistID(
-              StringUtils::Split(tag->value, separators));
-        else if (key == "MUSICBRAINZ_ALBUMARTIST")
-          item->GetMusicInfoTag()->SetAlbumArtist(tag->value);
-        else if (key == "MUSICBRAINZ_ALBUMID")
-          item->GetMusicInfoTag()->SetMusicBrainzAlbumID(tag->value);
-        else if (key == "MUSICBRAINZ_RELEASEGROUPID")
-          item->GetMusicInfoTag()->SetMusicBrainzReleaseGroupID(tag->value);
-        else if (key == "MUSICBRAINZ_ALBUMSTATUS")
-          item->GetMusicInfoTag()->SetAlbumReleaseStatus(tag->value);
-        else if (key == "MUSICBRAINZ_ALBUMTYPE")
-          item->GetMusicInfoTag()->SetMusicBrainzReleaseType(tag->value);
-        else if (key == "PUBLISHER")
-          item->GetMusicInfoTag()->SetRecordLabel(tag->value);
-        // mp3tag info shows year but the value is stored in date_recorded
-        // equates to TDRC in id3v2.4 ISO 8601 yyyy-mm-dd or part thereof
-        else if (key == "YEAR" || key == "DATE_RELEASED") // proper matroska tag is date_released
-          item->GetMusicInfoTag()->SetReleaseDate(tag->value);
-        // ISO 8601 as above. Equates to TDOR in id3v2.4 (set by mp3tag)
-        else if (key == "ORIGYEAR" || key == "DATE_RECORDED")
-          item->GetMusicInfoTag()->SetOriginalDate(tag->value);
-        else if (key == "COMPOSER")
-          addRole("Composer", tag->value);
-        else if (key == "LYRICIST")
-          addRole("Lyricist", tag->value);
-        else if (key == "CONDUCTOR")
-          addRole("Conductor", tag->value);
-        else if (key == "WRITER")
-          addRole("Writer", tag->value);
-        else if (key == "ARRANGER")
-          addRole("Arranger", tag->value);
-        else if (key == "BAND")
-          addRole("Band", tag->value);
-        else if (key == "ENGINEER")
-          addRole("Engineer", tag->value);
-        else if (key == "PRODUCER")
-          addRole("Producer", tag->value);
-        else if (key == "REMIXED_BY")
-          addRole("Remixer", tag->value);
-        else if (key == "MIXED_BY" || key == "MIXER"  )
-          addRole("Mixer", tag->value);
-        else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
-          item->GetMusicInfoTag()->SetDiscSubtitle(tag->value);
-        else if (key == "DISC")
-		  item->GetMusicInfoTag()->SetDiscNumber(std::stoi(tag->value));
-        else if (key == "COMMENT")
-          item->GetMusicInfoTag()->SetComment(tag->value);
-        else if (key == "MOOD")
-          item->GetMusicInfoTag()->SetMood(tag->value);
-        else if (key == "COMPILATION")
-          item->GetMusicInfoTag()->SetCompilation(true);
-        else if (key == "GENRE")
-        {
-          separators.push_back(",");
-          item->GetMusicInfoTag()->SetGenre(StringUtils::Split(tag->value, separators), true);
-          separators.pop_back();
-        }
-        // comma separated list of instrument, person
-        else if (key == "INSTRUMENTS")
-        {
-          tagdata = StringUtils::Split(tag->value, ",");
-          AddCommaDelimitedString(tagdata, separators, *item->GetMusicInfoTag());
-        }
-        /* comma separated list of role, person
-          The key value depends on tagging software but between 'INSTRUMENTS', 'INVOLVEDPEOPLE' and
-          'ACTOR', everything should be covered. For instance https://github.com/Martchus/tageditor
-          (window & linux) shows 'performers' in the gui but names the key 'ACTOR' in the file.
-          mp3tag uses both 'instruments' & 'involvedpeople'
-          https://www.poikosoft.com/metadata-editor (windows only) can create freeform tags as can
-          https://www.videohelp.com/software/chapterEditor (Win & Linux) although it also shows the
-          correct matroska spec tags
-        */
-        else if (key == "INVOLVEDPEOPLE" || key == "ACTOR")
-        {
-          tagdata = StringUtils::Split(tag->value, ",");
-          AddCommaDelimitedString(tagdata, separators, *item->GetMusicInfoTag());
-        }
+         std::string key = StringUtils::ToUpper(tag->key);
+		 std::string value = tag->value;
+
+		 if (key == "TITLE")
+		   item->GetMusicInfoTag()->SetTitle(value);
+		 else if (key == "ARTIST")
+		   item->GetMusicInfoTag()->SetArtist(
+			   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+		 else if (key == "MUSICBRAINZ_ARTISTID")
+		   item->GetMusicInfoTag()->SetMusicBrainzAlbumArtistID(
+			   StringUtils::Split(value, separators));
+		 else if (key == "ALBUMARTIST" || key == "ALBUM ARTIST")
+		   item->GetMusicInfoTag()->SetAlbumArtist(
+			   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+		 else if (key == "MUSICBRAINZ_TRACKID")
+		   item->GetMusicInfoTag()->SetMusicBrainzTrackID(value);
+		 else if (key == "DISC" || key == "DISCNUMBER")
+		   item->GetMusicInfoTag()->SetDiscNumber(std::stoi(value));
+		 else if (key == "COMPOSER")
+		   addRole("Composer", value);
+		 else if (key == "LYRICIST")
+		   addRole("Lyricist", value);
+		 else if (key == "CONDUCTOR")
+		   addRole("Conductor", value);
+		 else if (key == "WRITER")
+		   addRole("Writer", value);
+		 else if (key == "ARRANGER")
+		   addRole("Arranger", value);
+		 else if (key == "BAND")
+		   addRole("Band", value);
+		 else if (key == "ENGINEER")
+		   addRole("Engineer", value);
+		 else if (key == "PRODUCER")
+		   addRole("Producer", value);
+		 else if (key == "REMIXED_BY" || key == "REMIXEDBY")
+		   addRole("Remixer", value);
+		 else if (key == "YEAR" || key == "DATE_RECORDED")
+		   item->GetMusicInfoTag()->SetReleaseDate(value);
+		 else if (key == "ORIGYEAR" || key == "ORIGINALYEAR" || key == "DATE_RELEASED")
+		   item->GetMusicInfoTag()->SetOriginalDate(value);
+		 else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
+		   item->GetMusicInfoTag()->SetDiscSubtitle(value);
+		 else if (key == "COMMENT")
+		   item->GetMusicInfoTag()->SetComment(value);
+		 else if (key == "COMPILATION")
+		   item->GetMusicInfoTag()->SetCompilation(true);
+		 else if (key == "MOOD")
+		   item->GetMusicInfoTag()->SetMood(
+			   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+		 else if (key == "GENRE")
+		 {
+		   separators.emplace_back(",");
+		   item->GetMusicInfoTag()->SetGenre(StringUtils::Split(value, separators), true);
+		   separators.pop_back();
+		 }
+		 // comma separated list of instrument, person
+		 else if (key == "INSTRUMENTS")
+		 {
+		   tagdata = StringUtils::Split(value, ",");
+		   AddCommaDelimitedString(tagdata, separators, *item->GetMusicInfoTag());
+		 }
+		 // comma separated list of role, person
+         else if (key == "INVOLVEDPEOPLE")
+         {
+           tagdata = StringUtils::Split(value, ",");
+           AddCommaDelimitedString(tagdata, separators, *item->GetMusicInfoTag());
+         }
       }
       /* The comma separated lists are outside the Matroska spec
          (see https://www.matroska.org/technical/tagging.html) as it states to use multiple simple
