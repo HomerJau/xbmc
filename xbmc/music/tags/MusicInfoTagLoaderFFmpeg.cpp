@@ -110,7 +110,7 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
 
     if (key == "ALBUM")
     {
-      albumtag.SetAlbum(value);
+      tag.SetAlbum(value);
       album = value;
     }
     else if (key == "ARTIST")
@@ -224,7 +224,7 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
   // Title found. Fix: if no 'Album' tag then use the first Title key value.
   // Tags are usually written in order: Album then Tracks so this catches album Title
   if (album == "")
-    albumtag.SetAlbum(firsttitle);
+    tag.SetAlbum(firsttitle);
 
   AVDictionaryEntry* avtag = nullptr;
   while ((avtag = av_dict_get(fctx->metadata, "", avtag, AV_DICT_IGNORE_SUFFIX)))
