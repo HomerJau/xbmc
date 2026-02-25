@@ -98,6 +98,10 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     separators.push_back(musicsep);
   std::vector<std::string> tagdata;
   std::string value;
+  std::string firsttitle;
+  std::string album;
+  firsttitle = "";
+  album = "";
 
   auto&& ParseTag = [&](AVDictionaryEntry* avtag)
   {
@@ -105,7 +109,10 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     std::string value = avtag->value;
 
     if (key == "ALBUM")
-      tag.SetAlbum(value);
+    {
+      albumtag.SetAlbum(value);
+      album = value;
+    }
     else if (key == "ARTIST")
       tag.SetArtist(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
     else if (key == "ARTISTS")
@@ -113,7 +120,11 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     else if (key == "ALBUM_ARTIST" || key == "ALBUM ARTIST" || key == "ALBUMARTIST")
       tag.SetAlbumArtist(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
     else if (key == "TITLE")
+    {
       tag.SetTitle(value);
+      if (firsttitle == "")
+        firsttitle = value;
+    }
     else if (key == "PART_NUMBER" || key == "TRACK")
       tag.SetTrackNumber(std::stoi(value));
     else if (key == "DISC" || key == "DISCNUMBER ")
@@ -125,14 +136,16 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     }
     else if (key == "LABEL" || key == "TPUB" || key == "PUBLISHER")
       tag.SetRecordLabel(value);
+    else if (key == "CATALOGNUMBER")
+    {
+    } // No databse field yet
     else if (key == "COPYRIGHT" || key == "TCOP")
     {
     } // Copyright message
-    else if (key == "TDRC" || key == "DATE" || key == "DATE_RELEASED" || key == "YEAR" ||
-             key == "ORIGINALDATE")
+    else if (key == "TDRC" || key == "DATE" || key == "DATE_RELEASED" || key == "YEAR")
       tag.SetReleaseDate(value);
     else if (key == "TDOR" || key == "TORY" || key == "DATE_RECORDED" || 
-             key == "ORIGINAYEAR")
+             key == "ORIGINALDATE")
       tag.SetOriginalDate(value);
     else if (key == "TDAT")
       tag.AddReleaseDate(value, true); // MMDD part
@@ -204,6 +217,14 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     else if (key == "ENGINEER")
       tag.AddArtistRole("Engineer", StringUtils::Split(value, separators));
   };
+
+  // This is a workaround until TagLib 2.2 replaces ffmpeg ---
+  // Some tagging apps don't write 'Album' tag, they use Matroska standard "TITLE" and
+  // TagType 50 - ffmpeg cannot read multiple tags with same keys, it uses the last 
+  // Title found. Fix: if no 'Album' tag then use the first Title key value.
+  // Tags are usually written in order: Album then Tracks so this catches album Title
+  if (album == "")
+    albumtag.SetAlbum(firsttitle);
 
   AVDictionaryEntry* avtag = nullptr;
   while ((avtag = av_dict_get(fctx->metadata, "", avtag, AV_DICT_IGNORE_SUFFIX)))
