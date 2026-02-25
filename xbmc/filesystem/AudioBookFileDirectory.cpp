@@ -112,8 +112,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
        album = value;
       }
      else if (key == "TITLE")
-        if (firsttitle == "")
-           firsttitle = value;
+      {
+       if (firsttitle == "")
+         firsttitle = value;
+      }
 	 else if (key == "ARTIST")
 	   albumtag.SetArtist(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
 	 else if (key == "ARTISTSORT" || key == "ARTIST SORT")
