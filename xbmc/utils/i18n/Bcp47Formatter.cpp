@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2025-2026 Team Kodi
+ *  Copyright (C) 2025 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -10,71 +10,49 @@
 
 #include "utils/StringUtils.h"
 #include "utils/i18n/Bcp47.h"
+#include "utils/i18n/Iso3166_1.h"
+#include "utils/i18n/Iso639.h"
+#include "utils/i18n/Iso639_1.h"
+#include "utils/i18n/Iso639_2.h"
 
-#include <algorithm>
-#include <functional>
 #include <string_view>
 
 using namespace KODI::UTILS::I18N;
 
 namespace
 {
-/*!
- * \brief Return a reference to the shortest string in the provided list. The first match is returned
- *        in case multiple strings have the shortest length.
- * \note The returned reference is valid as long as the list remain in scope of the caller.
- * \param[in] list List of strings
- * \return reference to the shortest string.
- */
-std::string_view ShortestDescription(const std::vector<std::string>& list)
+bool LookupInISO639Tables(const std::string& code, std::string& desc)
 {
-  if (list.empty())
-    return "";
+  if (code.empty())
+    return false;
 
-  return *std::ranges::min_element(list, [](const auto& elem1, const auto& elem2)
-                                   { return elem1.size() < elem2.size(); });
-}
+  std::string sCode(code);
+  StringUtils::ToLower(sCode);
+  StringUtils::Trim(sCode);
 
-bool AppendRegistryDescSingle(
-    const std::optional<TagSubTags>& subTags,
-    std::function<std::optional<BaseSubTag>(const TagSubTags& subTag)> member,
-    std::string& str)
-{
-  if (subTags.has_value())
+  if (sCode.length() == 2)
   {
-    if (const auto& subTag = member(subTags.value());
-        subTag.has_value() && !subTag.value().m_descriptions.empty())
+    const auto ret = CIso639_1::LookupByCode(StringToLongCode(sCode));
+    if (ret.has_value())
     {
-      str.append(ShortestDescription(subTag.value().m_descriptions));
+      desc = ret.value();
       return true;
     }
   }
-  return false;
-}
-
-template<class T>
-bool AppendRegistryDescVector(const std::optional<TagSubTags>& subTags,
-                              std::function<std::vector<T>(const TagSubTags& subTag)> member,
-                              const std::string& sep,
-                              std::string& str)
-{
-  if (subTags.has_value())
+  else if (sCode.length() == 3)
   {
-    if (const auto& tagsVector = member(subTags.value()); !tagsVector.empty())
-    {
-      // Vector of references OK because subTags has function scope
-      std::vector<std::string_view> englishDesc;
-      englishDesc.reserve(tagsVector.size());
-      std::ranges::for_each(tagsVector,
-                            [&englishDesc](const auto& subTag)
-                            {
-                              auto& newDesc = englishDesc.emplace_back(
-                                  ShortestDescription(subTag.m_descriptions));
-                              if (newDesc.empty())
-                                newDesc = subTag.m_subTag;
-                            });
-      str.append(StringUtils::Join(englishDesc, sep));
+    uint32_t longCode = StringToLongCode(sCode);
 
+    // Map B to T for the few codes that have differences
+    const auto tCode = CIso639_2::BCodeToTCode(longCode);
+    if (tCode.has_value())
+      longCode = tCode.value();
+
+    // Lookup the T code
+    const auto ret = CIso639_2::LookupByCode(longCode);
+    if (ret.has_value())
+    {
+      desc = ret.value();
       return true;
     }
   }
@@ -86,28 +64,23 @@ std::string CBcp47Formatter::Format(const CBcp47& tag) const
 {
   std::string str;
 
-  if (m_style != Bcp47FormattingStyle::FORMAT_DEBUG)
+  if (tag.GetType() == Bcp47TagType::GRANDFATHERED)
   {
-    // Shortened formats for grandfathered and private use
-    // except for debug format, which always prints everything
-    if (tag.m_type == Bcp47TagType::GRANDFATHERED)
-    {
-      AppendGrandfathered(tag, str);
-      return str;
-    }
+    FormatGrandfathered(tag, str);
+    return str;
+  }
 
-    // Language may be empty only for tags made up only of a private use subtag
-    if (tag.m_type == Bcp47TagType::PRIVATE_USE)
-    {
-      AppendPrivateUse(tag, str);
-      return str;
-    }
+  // Language may be empty only for tags made up only of a private use subtag
+  if (tag.GetType() == Bcp47TagType::PRIVATE_USE)
+  {
+    FormatPrivateUse(tag, str);
+    return str;
   }
 
   if (m_style == Bcp47FormattingStyle::FORMAT_ENGLISH)
   {
     // Format the tag in a style similar to locale names, ex. English (United States)
-    AppendLanguage(tag, str);
+    FormatLanguage(tag, str);
     std::size_t languageSize = str.size();
 
     if (languageSize > 0)
@@ -116,17 +89,17 @@ std::string CBcp47Formatter::Format(const CBcp47& tag) const
     std::size_t othersBegin = str.size();
     constexpr std::string_view sep = ", ";
 
-    if (AppendExtLangs(tag, str))
+    if (FormatExtLangs(tag, str))
       str.append(sep);
-    if (AppendScript(tag, str))
+    if (FormatScript(tag, str))
       str.append(sep);
-    if (AppendRegion(tag, str))
+    if (FormatRegion(tag, str))
       str.append(sep);
-    if (AppendVariants(tag, str))
+    if (FormatVariants(tag, str))
       str.append(sep);
-    if (AppendExtensions(tag, str))
+    if (FormatExtensions(tag, str))
       str.append(sep);
-    if (AppendPrivateUse(tag, str))
+    if (FormatPrivateUse(tag, str))
       str.append(sep);
 
     if (str.size() > othersBegin)
@@ -141,283 +114,143 @@ std::string CBcp47Formatter::Format(const CBcp47& tag) const
       str.erase(languageSize);
     }
   }
-  else if (m_style == Bcp47FormattingStyle::FORMAT_BCP47)
+  else
   {
     // Format the tag as a BCP 47 tag with the recommended casing
 
     str.reserve(35); // size recommended by RFC5646
 
-    if (AppendLanguage(tag, str))
+    if (FormatLanguage(tag, str))
       str.push_back('-');
-    if (AppendExtLangs(tag, str))
+    if (FormatExtLangs(tag, str))
       str.push_back('-');
-    if (AppendScript(tag, str))
+    if (FormatScript(tag, str))
       str.push_back('-');
-    if (AppendRegion(tag, str))
+    if (FormatRegion(tag, str))
       str.push_back('-');
-    if (AppendVariants(tag, str))
+    if (FormatVariants(tag, str))
       str.push_back('-');
-    if (AppendExtensions(tag, str))
+    if (FormatExtensions(tag, str))
       str.push_back('-');
-    if (AppendPrivateUse(tag, str))
+    if (FormatPrivateUse(tag, str))
       str.push_back('-');
 
     // remove final -
     if (!str.empty())
       str.pop_back();
   }
-  else if (m_style == Bcp47FormattingStyle::FORMAT_DEBUG) [[unlikely]]
-  {
-    constexpr std::string_view sep = ", ";
-
-    // Dump as much information of the tag as posible, in raw form
-    AppendDebugHeader(tag, str);
-
-    AppendLanguage(tag, str);
-    str.append(sep);
-    AppendExtLangs(tag, str);
-    str.append(sep);
-    AppendScript(tag, str);
-    str.append(sep);
-    AppendRegion(tag, str);
-    str.append(sep);
-    AppendVariants(tag, str);
-    str.append(sep);
-    AppendExtensions(tag, str);
-    str.append(sep);
-    AppendPrivateUse(tag, str);
-    str.append(sep);
-    AppendGrandfathered(tag, str);
-
-    if (str.back() == ' ')
-      str.pop_back();
-  }
 
   return str;
 }
 
-bool CBcp47Formatter::AppendLanguage(const CBcp47& tag, std::string& str) const
+bool CBcp47Formatter::FormatLanguage(const CBcp47& tag, std::string& str) const
 {
-  bool modified{false};
+  const std::string& language = tag.GetLanguage();
+  if (language.empty())
+    return false;
 
-  if (m_style == Bcp47FormattingStyle::FORMAT_DEBUG) [[unlikely]]
+  if (m_style == Bcp47FormattingStyle::FORMAT_ENGLISH)
   {
-    str.append("language: ");
-    str.append(tag.m_language);
-    modified = true;
+    // Language from ISO 639-1 or ISO 639-2
+    if (std::string lang; LookupInISO639Tables(language, lang))
+      str.append(lang);
+    else
+      str.append(language); // was likely ISO 639-3 or 639-5
+    return true;
   }
-  else if (const std::string& language = tag.m_language; !language.empty())
-  {
-    if (m_style == Bcp47FormattingStyle::FORMAT_ENGLISH)
-      modified = AppendRegistryDescSingle(tag.m_registrySubTags, &TagSubTags::m_language, str);
 
-    if (!modified)
-    {
-      str.append(language);
-      modified = true;
-    }
-  }
-  return modified;
+  str.append(language);
+  return true;
 }
 
-bool CBcp47Formatter::AppendExtLangs(const CBcp47& tag, std::string& str) const
+bool CBcp47Formatter::FormatExtLangs(const CBcp47& tag, std::string& str) const
 {
-  bool modified{false};
+  const std::vector<std::string>& extLangs = tag.GetExtLangs();
+  if (extLangs.empty())
+    return false;
 
-  if (m_style == Bcp47FormattingStyle::FORMAT_DEBUG) [[unlikely]]
-  {
-    str.append("ext langs: {");
-    str.append(StringUtils::Join(tag.m_extLangs, ", "));
-    str.append("}");
-    modified = true;
-  }
-  else if (const std::vector<std::string>& extLangs = tag.m_extLangs; !extLangs.empty())
-  {
-    if (m_style == Bcp47FormattingStyle::FORMAT_ENGLISH)
-    {
-      const auto& tags{tag.m_registrySubTags};
-      modified = AppendRegistryDescVector<ExtLangSubTag>(tags, &TagSubTags::m_extLangs, " ", str);
-    }
-    if (!modified)
-    {
-      str.append(StringUtils::Join(extLangs, "-"));
-      modified = true;
-    }
-  }
-  return modified;
+  str.append(StringUtils::Join(extLangs, "-"));
+  return true;
 }
 
-bool CBcp47Formatter::AppendScript(const CBcp47& tag, std::string& str) const
+bool CBcp47Formatter::FormatScript(const CBcp47& tag, std::string& str) const
 {
-  bool modified{false};
+  const std::string& script = tag.GetScript();
+  if (script.empty())
+    return false;
 
-  if (m_style == Bcp47FormattingStyle::FORMAT_DEBUG) [[unlikely]]
-  {
-    str.append("script: ");
-    str.append(tag.m_script);
-    modified = true;
-  }
-  else if (const std::string& script = tag.m_script; !script.empty())
-  {
-    if (m_style == Bcp47FormattingStyle::FORMAT_ENGLISH)
-      modified = AppendRegistryDescSingle(tag.m_registrySubTags, &TagSubTags::m_script, str);
-
-    if (!modified)
-    {
-      std::string s = script;
-      StringUtils::ToCapitalize(s);
-      str.append(s);
-      modified = true;
-    }
-  }
-  return modified;
+  std::string s = script;
+  StringUtils::ToCapitalize(s);
+  str.append(s);
+  return true;
 }
 
-bool CBcp47Formatter::AppendRegion(const CBcp47& tag, std::string& str) const
+bool CBcp47Formatter::FormatRegion(const CBcp47& tag, std::string& str) const
 {
-  bool modified{false};
+  const std::string& region = tag.GetRegion();
+  if (region.empty())
+    return false;
 
-  if (m_style == Bcp47FormattingStyle::FORMAT_DEBUG) [[unlikely]]
+  if (m_style == Bcp47FormattingStyle::FORMAT_ENGLISH)
   {
-    str.append("region: ");
-    str.append(tag.m_region);
-    modified = true;
+    // Region from ISO 3166-1. UN M.49 is not supported.
+    const auto reg = CIso3166_1::LookupByCode(region);
+    str.append(reg.value_or(StringUtils::ToUpper(region)));
   }
-  else if (const std::string& region = tag.m_region; !region.empty())
+  else
   {
-    if (m_style == Bcp47FormattingStyle::FORMAT_ENGLISH)
-      modified = AppendRegistryDescSingle(tag.m_registrySubTags, &TagSubTags::m_region, str);
-
-    if (!modified)
-    {
-      str.append(StringUtils::ToUpper(region));
-    }
-    modified = true;
+    str.append(StringUtils::ToUpper(region));
   }
-  return modified;
+  return true;
 }
 
-bool CBcp47Formatter::AppendVariants(const CBcp47& tag, std::string& str) const
+bool CBcp47Formatter::FormatVariants(const CBcp47& tag, std::string& str) const
 {
-  bool modified{false};
+  const std::vector<std::string>& variants = tag.GetVariants();
+  if (variants.empty())
+    return false;
 
-  if (m_style == Bcp47FormattingStyle::FORMAT_DEBUG) [[unlikely]]
-  {
-    str.append("variants: {");
-    str.append(StringUtils::Join(tag.m_variants, ", "));
-    str.append("}");
-    modified = true;
-  }
-  else if (const std::vector<std::string>& variants = tag.m_variants; !variants.empty())
-  {
-    if (m_style == Bcp47FormattingStyle::FORMAT_ENGLISH)
-    {
-      const auto& tags{tag.m_registrySubTags};
-      modified = AppendRegistryDescVector<VariantSubTag>(tags, &TagSubTags::m_variants, " ", str);
-    }
-    if (!modified)
-    {
-      str.append(StringUtils::Join(variants, "-"));
-      modified = true;
-    }
-  }
-  return modified;
+  str.append(StringUtils::Join(variants, "-"));
+  return true;
 }
 
-bool CBcp47Formatter::AppendExtensions(const CBcp47& tag, std::string& str) const
+bool CBcp47Formatter::FormatExtensions(const CBcp47& tag, std::string& str) const
 {
-  bool modified{false};
+  const std::vector<Bcp47Extension>& extensions = tag.GetExtensions();
+  if (extensions.empty())
+    return false;
 
-  if (m_style == Bcp47FormattingStyle::FORMAT_DEBUG) [[unlikely]]
+  for (const auto& ext : extensions)
   {
-    str.append("extensions: {");
-
-    for (const auto& ext : tag.m_extensions)
-    {
-      str.append("name: ");
-      str.push_back(ext.name);
-      str.append(" values: {");
-      str.append(StringUtils::Join(ext.segments, ", "));
-      str.append("} ");
-    }
-    // remove final space
-    if (!tag.m_extensions.empty())
-      str.pop_back();
-
-    str.append("}");
-    modified = true;
+    str.push_back(ext.name);
+    str.push_back('-');
+    str.append(StringUtils::Join(ext.segments, "-"));
+    str.push_back('-');
   }
-  else if (const std::vector<Bcp47Extension>& extensions = tag.m_extensions; !extensions.empty())
-  {
-    for (const auto& ext : extensions)
-    {
-      str.push_back(ext.name);
-      str.push_back('-');
-      str.append(StringUtils::Join(ext.segments, "-"));
-      str.push_back('-');
-    }
-    // remove final -
-    str.pop_back();
-    modified = true;
-  }
+  // remove final -
+  str.pop_back();
 
-  return modified;
+  return true;
 }
 
-bool CBcp47Formatter::AppendPrivateUse(const CBcp47& tag, std::string& str) const
+bool CBcp47Formatter::FormatPrivateUse(const CBcp47& tag, std::string& str) const
 {
-  bool modified{false};
+  const std::vector<std::string>& privateUse = tag.GetPrivateUse();
+  if (privateUse.empty())
+    return false;
 
-  if (m_style == Bcp47FormattingStyle::FORMAT_DEBUG) [[unlikely]]
-  {
-    str.append("private use: {");
-    str.append(StringUtils::Join(tag.m_privateUse, ", "));
-    str.append("}");
-    modified = true;
-  }
-  else if (const std::vector<std::string>& privateUse = tag.m_privateUse; !privateUse.empty())
-  {
-    str.append("x-");
-    str.append(StringUtils::Join(privateUse, "-"));
-    modified = true;
-  }
-  return modified;
+  str.append("x-");
+  str.append(StringUtils::Join(privateUse, "-"));
+
+  return true;
 }
 
-bool CBcp47Formatter::AppendGrandfathered(const CBcp47& tag, std::string& str) const
+bool CBcp47Formatter::FormatGrandfathered(const CBcp47& tag, std::string& str) const
 {
-  bool modified{false};
+  const std::string& grandfathered = tag.GetGrandfathered();
+  if (grandfathered.empty())
+    return false;
 
-  if (m_style == Bcp47FormattingStyle::FORMAT_DEBUG) [[unlikely]]
-  {
-    str.append("grandfathered: ");
-    str.append(tag.m_grandfathered);
-    modified = true;
-  }
-  else if (const std::string& grandfathered = tag.m_grandfathered; !grandfathered.empty())
-  {
-    if (m_style == Bcp47FormattingStyle::FORMAT_ENGLISH)
-      modified = AppendRegistryDescSingle(tag.m_registrySubTags, &TagSubTags::m_grandfathered, str);
-
-    if (!modified)
-      str.append(grandfathered);
-
-    modified = true;
-  }
-
-  return modified;
-}
-
-void CBcp47Formatter::AppendDebugHeader(const CBcp47& tag, std::string& str) const
-{
-  str.append("BCP47 (");
-
-  if (tag.m_type == Bcp47TagType::WELL_FORMED)
-    str.append("well formed, ");
-  else if (tag.m_type == Bcp47TagType::GRANDFATHERED)
-    str.append("grandfathered, ");
-  else if (tag.m_type == Bcp47TagType::PRIVATE_USE)
-    str.append("private use, ");
-
-  str.append(tag.IsValid() ? "valid) " : "invalid) ");
+  str.append(grandfathered);
+  return true;
 }

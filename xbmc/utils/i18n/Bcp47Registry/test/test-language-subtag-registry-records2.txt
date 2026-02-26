@@ -1,4 +1,0 @@
-record1
-%%
-record2
-%%
