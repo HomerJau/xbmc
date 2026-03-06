@@ -75,9 +75,6 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   const bool isAudioBook = url.IsFileType("m4b");
   // Some tags are relevant to the whole album - these are read first
   CMusicInfoTag albumtag;
-  std::string firsttitle;
-  firsttitle = "";
-  album = "";
    
   AVDictionaryEntry* tag=nullptr;
   while ((tag = av_dict_get(m_fctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
@@ -107,25 +104,16 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 	   key.erase(0, 6);
 
 	 if (key == "ALBUM")
-      {
        albumtag.SetAlbum(value);
-       album = value;
-      }
-     else if (key == "TITLE")
-      {
-       if (firsttitle == "")
-         firsttitle = value;
-      }
-	 else if (key == "ARTIST")
+     else if (key == "ARTIST")
        albumtag.SetArtist(tag->value);
-	 else if (key == "ARTISTSORT" || key == "ARTIST SORT")
-	   albumtag.SetArtistSort(
-		   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-	 else if (key == "ALBUMARTIST" || key == "ALBUM ARTIST" || key == "ALBUM_ARTIST")
-	   albumtag.SetAlbumArtist(
-		   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+     else if (key == "ARTISTSORT" || key == "ARTIST SORT")
+       albumtag.SetArtistSort(
+               StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+     else if (key == "ALBUMARTIST" || key == "ALBUM ARTIST" || key == "ALBUM_ARTIST")
+       albumtag.SetAlbumArtist(value);
 	 else if (key == "ALBUMARTSTS" || key == "ALBUM ARTISTS")
-	   albumtag.SetAlbumArtist(StringUtils::Split(value, separators));
+       albumtag.SetAlbumArtist(StringUtils::Split(value, separators));
 	 else if (key == "ALBUMARTISTSORT" || key == "ALBUM ARTIST SORT" || key == "SORT_ALBUM_ARTIST")
 	   albumtag.SetAlbumArtistSort(
 		   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
@@ -186,14 +174,6 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 	   albumtag.SetComment(value);
     }
   }
- 
-  // This is a workaround until TagLib 2.2 replaces ffmpeg ---
-  // Some tagging apps don't write 'Album' tag, they use Matroska standard "TITLE" and
-  // TagType 50 - ffmpeg cannot read multiple tags with same keys, it uses the last
-  // Title found. Fix: if no 'Album' tag then use the first Title key value.
-  // Tags are usually written in order: Album then Tracks so this catches album Title
-  if (album == "")
-    albumtag.SetAlbum(firsttitle);
 
   AVStream* st = nullptr;
   std::string codec_name = "unknown";
