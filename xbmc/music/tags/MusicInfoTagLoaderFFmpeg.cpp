@@ -114,11 +114,11 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
       album = value;
     }
     else if (key == "ARTIST")
-      tag.SetArtist(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+      tag.SetArtist(value);
     else if (key == "ARTISTS")
       tag.SetMusicBrainzArtistHints(StringUtils::Split(value, separators));
     else if (key == "ALBUM_ARTIST" || key == "ALBUM ARTIST" || key == "ALBUMARTIST")
-      tag.SetAlbumArtist(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+      tag.SetAlbumArtist(value);
     else if (key == "TITLE")
     {
       tag.SetTitle(value);
