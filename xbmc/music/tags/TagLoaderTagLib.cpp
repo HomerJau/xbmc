@@ -501,7 +501,7 @@ bool CTagLoaderTagLib::ParseTag(APE::Tag *ape, EmbeddedArt *art, CMusicInfoTag& 
     return false;
 
   ReplayGain replayGainInfo;
-  const APE::ItemListMap itemListMap = ape->itemListMap();
+  const APE::ItemListMap& itemListMap = ape->itemListMap();
   for (APE::ItemListMap::ConstIterator it = itemListMap.begin(); it != itemListMap.end(); ++it)
   {
     if (it->first == "ARTIST")
@@ -605,7 +605,7 @@ bool CTagLoaderTagLib::ParseTag(APE::Tag *ape, EmbeddedArt *art, CMusicInfoTag& 
     {
       TagLib::ByteVector tdata = it->second.binaryData();
       // The image data follows a null byte, which can optionally be preceded by a filename
-      const uint offset = tdata.find('\0') + 1;
+      const unsigned offset = tdata.find('\0') + 1;
       ByteVector bv(tdata.data() + offset, tdata.size() - offset);
       // Infer the mimetype
       std::string mime{};
@@ -617,7 +617,7 @@ bool CTagLoaderTagLib::ParseTag(APE::Tag *ape, EmbeddedArt *art, CMusicInfoTag& 
         mime = "image/gif";
       else if (bv.startsWith("\x42\x4D"))
         mime = "image/bmp";
-      if ((offset > 0) && (offset <= tdata.size()) && (mime.size() > 0))
+      if ((offset > 0) && (offset <= tdata.size()) && (!mime.empty()))
       {
         tag.SetCoverArtInfo(bv.size(), mime);
         if (art)
@@ -843,7 +843,7 @@ bool CTagLoaderTagLib::ParseTag(MP4::Tag *mp4, EmbeddedArt *art, CMusicInfoTag& 
     return false;
 
   ReplayGain replayGainInfo;
-  const MP4::ItemMap itemMap = mp4->itemMap();
+  const MP4::ItemMap& itemMap = mp4->itemMap();
   for (auto it = itemMap.begin(); it != itemMap.end(); ++it)
   {
     if (it->first == "\251nam")
@@ -1245,23 +1245,36 @@ bool CTagLoaderTagLib::Load(const std::string& strFileName, CMusicInfoTag& tag, 
     else if (strExtension == "asf" || strExtension == "wmv" || strExtension == "wma")
       file = asfFile = new ASF::File(stream);
     else if (strExtension == "flac")
+#if (TAGLIB_MAJOR_VERSION >= 2)
+      file = flacFile = new FLAC::File(stream);
+#else
       file = flacFile = new FLAC::File(stream, ID3v2::FrameFactory::instance());
+#endif
     else if (strExtension == "it")
       file = new IT::File(stream);
-    else if (strExtension == "mod" || strExtension == "module" || strExtension == "nst" || strExtension == "wow")
+    else if (strExtension == "mod" || strExtension == "module" || strExtension == "nst" ||
+             strExtension == "wow")
       file = new Mod::File(stream);
     else if (strExtension == "mp4" || strExtension == "m4a" || strExtension == "m4v" ||
-             strExtension == "m4r" || strExtension == "m4b" ||
-             strExtension == "m4p" || strExtension == "3g2")
+             strExtension == "m4r" || strExtension == "m4b" || strExtension == "m4p" ||
+             strExtension == "3g2")
       file = mp4File = new MP4::File(stream);
     else if (strExtension == "mpc")
       file = mpcFile = new MPC::File(stream);
     else if (strExtension == "mp3" || strExtension == "aac")
+#if (TAGLIB_MAJOR_VERSION >= 2)
+      file = mpegFile = new MPEG::File(stream);
+#else
       file = mpegFile = new MPEG::File(stream, ID3v2::FrameFactory::instance());
+#endif
     else if (strExtension == "s3m")
       file = new S3M::File(stream);
     else if (strExtension == "tta")
+#if (TAGLIB_MAJOR_VERSION >= 2)
+      file = ttaFile = new TrueAudio::File(stream);
+#else
       file = ttaFile = new TrueAudio::File(stream, ID3v2::FrameFactory::instance());
+#endif
     else if (strExtension == "wv")
       file = wvFile = new WavPack::File(stream);
     else if (strExtension == "aif" || strExtension == "aiff")
@@ -1274,7 +1287,8 @@ bool CTagLoaderTagLib::Load(const std::string& strFileName, CMusicInfoTag& tag, 
       file = oggVorbisFile = new Ogg::Vorbis::File(stream);
     else if (strExtension == "opus")
       file = oggOpusFile = new Ogg::Opus::File(stream);
-    else if (strExtension == "oga") // Leave this madness until last - oga container can have Vorbis or FLAC
+    else if (strExtension ==
+             "oga") // Leave this madness until last - oga container can have Vorbis or FLAC
     {
       file = oggFlacFile = new Ogg::FLAC::File(stream);
       if (!file || !file->isValid())
@@ -1412,9 +1426,13 @@ bool CTagLoaderTagLib::Load(const std::string& strFileName, CMusicInfoTag& tag, 
     else    // This is a catch all to get generic information for other files types (s3m, xm, it, mod, etc)
       genericTag = file->tag();
   
-    if (file->audioProperties())
+   if (file->audioProperties())
     {
+#if (TAGLIB_MAJOR_VERSION >= 2)
+      tag.SetDuration(file->audioProperties()->lengthInSeconds());
+#else
       tag.SetDuration(file->audioProperties()->length());
+#endif
       tag.SetBitRate(file->audioProperties()->bitrate());
       tag.SetNoOfChannels(file->audioProperties()->channels());
       tag.SetSampleRate(file->audioProperties()->sampleRate());

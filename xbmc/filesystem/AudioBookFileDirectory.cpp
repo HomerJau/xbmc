@@ -8,18 +8,23 @@
 #include "AudioBookFileDirectory.h"
 
 #include "FileItem.h"
-#include "TextureDatabase.h"
+#include "FileItemList.h"
+#include "ServiceBroker.h"
 #include "URL.h"
 #include "Util.h"
-#include "cores/FFmpeg.h"
 #include "filesystem/File.h"
-#include "guilib/LocalizeStrings.h"
-#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
-#include "music/tags/MusicInfoTag.h"
+#include "imagefiles/ImageFileURL.h"
+#include "music/tags/MusicInfoTagLoaderMatroska.h"
+#include <map>
+#include "resources/LocalizeStrings.h"
+#include "resources/ResourcesComponent.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
-#include "utils/log.h"
+#include "utils/Mp4ChplReader.h"
 #include "utils/StringUtils.h"
+#include "utils/log.h"
+#include <vector>
+
 
 using namespace XFILE;
 using namespace MUSIC_INFO;
@@ -60,8 +65,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   std::string author;
   std::string album;
   std::string desc;
-  std::vector<std::string> artistsort;
-  std::vector<std::string> tagdata;
+  
   std::vector<std::string> separators{" feat. ", " ft. ", " Feat. ", " Ft. ",  ";", ":",
                                       "|", "#", "/", " with ", "&"};
   const std::string musicsep =
@@ -75,7 +79,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   const bool isAudioBook = url.IsFileType("m4b");
   // Some tags are relevant to the whole album - these are read first
   CMusicInfoTag albumtag;
-   
+
   AVDictionaryEntry* tag=nullptr;
   while ((tag = av_dict_get(m_fctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
   {
@@ -90,91 +94,60 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       else if (StringUtils::CompareNoCase(tag->key, "description") == 0)
         desc = tag->value;
     }
-    else
-    {
-      std::string key = StringUtils::ToUpper(tag->key);
-	  std::string value = tag->value;
-	  /* The matroska Tag and chapter editor from https://www.videohelp.com/software/chapterEditor
-		prefaces level 50 tags with the target type (album/concert/episde/movie/etc). That needs
-		removing for the tag processing to work correctly. MKVToolnix & mp3tag correctly target
-		level 50 and do not preface the tag with the target type. We're only interested in albums
-		at this level (50) so strip off the preface if it exists.
-	  */
-	 if (StringUtils::StartsWith(key, "ALBUM/"))
-	   key.erase(0, 6);
+  }
 
-	 if (key == "ALBUM")
-       albumtag.SetAlbum(value);
-     else if (key == "ARTIST")
-       albumtag.SetArtist(tag->value);
-     else if (key == "ARTISTSORT" || key == "ARTIST SORT")
-       albumtag.SetArtistSort(
-               StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-     else if (key == "ALBUMARTIST" || key == "ALBUM ARTIST" || key == "ALBUM_ARTIST")
-       albumtag.SetAlbumArtist(value);
-	 else if (key == "ALBUMARTSTS" || key == "ALBUM ARTISTS")
-       albumtag.SetAlbumArtist(StringUtils::Split(value, separators));
-	 else if (key == "ALBUMARTISTSORT" || key == "ALBUM ARTIST SORT" || key == "SORT_ALBUM_ARTIST")
-	   albumtag.SetAlbumArtistSort(
-		   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-	 else if (key == "COMPOSERSORT" || key == "COMPOSER SORT")
-	   albumtag.SetComposerSort(
-		   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-	 else if (key == "MUSICBRAINZ_ARTISTID")
-	   albumtag.SetMusicBrainzArtistID(StringUtils::Split(value, separators));
-	 else if (key == "MUSICBRAINZ_ALBUMARTISTID" || key == "MUSICBRAINZ ALBUM ARTIST ID")
-	   albumtag.SetMusicBrainzAlbumArtistID(StringUtils::Split(value, separators));
-	 else if (key == "MUSICBRAINZ_ALBUMARTIST")
-	   albumtag.SetAlbumArtist(value);
-	 else if (key == "MUSICBRAINZ_ALBUMID" || key == "MUSICBRAINZ ALBUM ID")
-	   albumtag.SetMusicBrainzAlbumID(value);
-	 else if (key == "MUSICBRAINZ_RELEASEGROUPID" || key == "MUSICBRAINZ RELEASE GROUP ID")
-	   albumtag.SetMusicBrainzReleaseGroupID(value);
-	 else if (key == "MUSICBRAINZ TRACKID" || key == "MUSICBRAINZ_TRACKID")
-	   albumtag.SetMusicBrainzTrackID(value);
-	 else if (key == "MUSICBRAINZ_ALBUMSTATUS")
-	   albumtag.SetAlbumReleaseStatus(value);
-	 else if (key == "MUSICBRAINZ_ALBUMTYPE")
-	   albumtag.SetMusicBrainzReleaseType(value);
-	 else if (key == "COMPILATION")
-	   albumtag.SetCompilation(true);
-	 else if (key == "PUBLISHER")
-	   albumtag.SetRecordLabel(value);
-	 else if (key == "DATE" || key == "YEAR" || key == "DATE_RELEASED") 
-	   albumtag.SetReleaseDate(value);
-	 else if (key == "ORIGINALYEAR " || key == "DATE_RECORDED")
-	   albumtag.SetOriginalDate(value);
-	 else if (key == "MOOD")
-	   albumtag.SetMood(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-	 // genre could be comma delimited or not. Temporarily add the comma just in case.  true trims
-	 // any whitespace around the genre(s)
-	 else if (key == "GENRE")
-	 {
-	   separators.push_back(",");
-	   albumtag.SetGenre(StringUtils::Split(value, separators), true);
-	   separators.pop_back();
-	 }
-	 // comma separated list of role, person
-	 else if (key == "INVOLVEDPEOPLE" || key == "ACTOR")
-	 {
-	   tagdata = StringUtils::Split(tag->value, ",");
-	   AddCommaDelimitedString(tagdata, separators, albumtag);
-	 }
-     else if (key == "TRACK" || key == "PART_NUMBER")
-           albumtag.SetDiscNumber(std::stoi(value));
-     else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
-           albumtag.SetDiscSubtitle(value);
-	 else if (key == "DISC" || key == "DISCNUMBER")
-	   albumtag.SetDiscNumber(std::stoi(value));
-	 else if (key == "REMIXEDBY" || key == "REMIXED_BY")
-	   albumtag.AddArtistRole("Remixer", value);
-	 else if (key == "MIXED_BY" || key == "MIXER")
-	   albumtag.AddArtistRole("Mixer", value);
-	 else if (key == "COMMENT")
-	   albumtag.SetComment(value);
+  std::map<std::string, std::string> fileTags;
+  std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
+  std::vector<unsigned long long> chapterOrder;
+  if (!isAudioBook)
+  {
+    CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags, chapterOrder);
+    if (fileTags.empty())
+      return true;
+    /*!
+     * initially just get the (file) Album level tags to be use in susequent tracks
+     * (chapters) processed below to create Kodi misc Songs
+    */
+    for (const auto& t : fileTags)
+      CMusicInfoTagLoaderMatroska::ParseTag(t.first, t.second, separators, musicsep, albumtag);
+    /*!
+     * deal with non existsant ALBUM tag which was required in Kodi 21.3 and Kodi 22 
+     * before TagLib 2.2.1 bump Matroska support added in Kodi 22 Beta 1 
+     * MP3Tag and others do not write ALBUM tag, but the TITLE tag tagType 50 
+     * which is the Album tag type in Matroska tag spec
+    */
+    if (albumtag.GetAlbum().empty())
+      albumtag.SetAlbum(albumtag.GetTitle());
+  } 
+
+  std::string thumb;
+  if (m_fctx->nb_chapters > 1)
+    thumb = IMAGE_FILES::URLFromFile(url.Get(), "music");
+
+  ChplChapterResult neroChapterResult{chplNone};
+  std::vector<ChplChapter> nero;
+
+  if (isAudioBook)
+  {
+    neroChapterResult = CChplChapterReader::ScanNeroChapters(url, nero);
+    if (neroChapterResult.IsError())
+    {
+      CLog::Log(LOGERROR,
+                "AudioBookFileDirectory: Error scanning for Nero style chapters in file {}. The "
+                "error returned was {}",
+                url.GetRedacted(), *neroChapterResult.errorMessage);
+    }
+    else if (neroChapterResult.IsNone())
+    { // can't get here without some form of chapter so must be QT style chapters (chap atom)
+      CLog::Log(
+          LOGDEBUG,
+          "AudioBookFileDirectory: Scanned for nero style chapters but didn't find any in {}, "
+          "using QT chapters",
+          url.GetRedacted());
     }
   }
 
+ // now get the AudioCodec etc for QQ Kodi-------------------------------------
   AVStream* st = nullptr;
   std::string codec_name = "unknown";
   int streamIndex = -1;
@@ -205,7 +178,6 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   if (streamIndex > -1)
   {
     st = m_fctx->streams[streamIndex];
-
     albumtag.SetBitsPerSample(st->codecpar->bits_per_coded_sample);
     albumtag.SetSampleRate(st->codecpar->sample_rate);
     albumtag.SetBitRate(st->codecpar->bit_rate);
@@ -219,10 +191,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
         case FF_PROFILE_DTS_HD_MA:
           codec_name = "dtshd_ma";
           break;
-		case FF_PROFILE_DTS_96_24:
+        case FF_PROFILE_DTS_96_24:
           codec_name = "dts_96_24";
           break;
-		case FF_PROFILE_DTS_HD_MA_X:
+        case FF_PROFILE_DTS_HD_MA_X:
           codec_name = "dtshd_ma_x";
           break;
         case FF_PROFILE_DTS_HD_MA_X_IMAX:
@@ -249,20 +221,11 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       codec_name = "truehd_atmos";
     albumtag.SetCodec(codec_name);
   }
-
-  std::string thumb;
-
-  // Chaned to > 0 in QQ Kodi 7 (testing)
-  if (m_fctx->nb_chapters > 0)
-    thumb = CTextureUtils::GetWrappedImageURL(url.Get(), "music");
-
-  // Look for any embedded cover art
-  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(m_fctx, albumtag);
+  const size_t ns = nero.size();
 
   float chapter_size = 0;
-
   bool chapter_error = false;
-  for (size_t i=0; i < m_fctx->nb_chapters;++i)
+  for (unsigned int i = 0; i < m_fctx->nb_chapters; ++i)
   {
     if (m_fctx->chapters[i]->start < 0) // negative start time, ignore it
       continue;
@@ -276,110 +239,32 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       chapter_error = true;
       continue;
     }
-    tag=nullptr;
-    std::string chaptitle = StringUtils::Format(g_localizeStrings.Get(25010), i + 1);
+
+    tag = nullptr;
+    std::string chaptitle = StringUtils::Format(
+        CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25010), i + 1);
     std::string chapauthor;
     std::string chapalbum;
 
     std::shared_ptr<CFileItem> item(new CFileItem(url.Get(), false));
     *item->GetMusicInfoTag() = albumtag;
-
-    auto addRole = [&](const std::string& role, const std::string& value)
-    {
-      if (!value.empty())
-        item->GetMusicInfoTag()->AddArtistRole(role, StringUtils::Split(value, separators));
-    };
-
-    while ((tag=av_dict_get(m_fctx->chapters[i]->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
-    {
-      if (isAudioBook)
-      {
-        if (StringUtils::CompareNoCase(tag->key, "title") == 0)
-          chaptitle = tag->value;
-        else if (StringUtils::CompareNoCase(tag->key, "artist") == 0)
-          chapauthor = tag->value;
-        else if (StringUtils::CompareNoCase(tag->key, "album") == 0)
-          chapalbum = tag->value;
-      }
-      else
-      {
-         std::string key = StringUtils::ToUpper(tag->key);
-		 std::string value = tag->value;
-
-		 if (key == "TITLE")
-		   item->GetMusicInfoTag()->SetTitle(value);
-		 else if (key == "ARTIST")
-		   item->GetMusicInfoTag()->SetArtist(
-			   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-		 else if (key == "MUSICBRAINZ_ARTISTID")
-		   item->GetMusicInfoTag()->SetMusicBrainzAlbumArtistID(
-			   StringUtils::Split(value, separators));
-		 else if (key == "ALBUMARTIST" || key == "ALBUM ARTIST")
-		   item->GetMusicInfoTag()->SetAlbumArtist(
-			   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-		 else if (key == "MUSICBRAINZ_TRACKID")
-		   item->GetMusicInfoTag()->SetMusicBrainzTrackID(value);
-		 else if (key == "DISC" || key == "DISCNUMBER")
-		   item->GetMusicInfoTag()->SetDiscNumber(std::stoi(value));
-		 else if (key == "COMPOSER")
-		   addRole("Composer", value);
-		 else if (key == "LYRICIST")
-		   addRole("Lyricist", value);
-		 else if (key == "CONDUCTOR")
-		   addRole("Conductor", value);
-		 else if (key == "WRITER")
-		   addRole("Writer", value);
-		 else if (key == "ARRANGER")
-		   addRole("Arranger", value);
-		 else if (key == "BAND")
-		   addRole("Band", value);
-		 else if (key == "ENGINEER")
-		   addRole("Engineer", value);
-		 else if (key == "PRODUCER")
-		   addRole("Producer", value);
-		 else if (key == "REMIXED_BY" || key == "REMIXEDBY")
-		   addRole("Remixer", value);
-		 else if (key == "YEAR" || key == "DATE_RECORDED")
-		   item->GetMusicInfoTag()->SetReleaseDate(value);
-		 else if (key == "ORIGYEAR" || key == "ORIGINALYEAR" || key == "DATE_RELEASED")
-		   item->GetMusicInfoTag()->SetOriginalDate(value);
-		 else if (key == "SUBTITLE" || key == "SETSUBTITLE" || key == "DISCSUBTITLE")
-		   item->GetMusicInfoTag()->SetDiscSubtitle(value);
-		 else if (key == "COMMENT")
-		   item->GetMusicInfoTag()->SetComment(value);
-		 else if (key == "COMPILATION")
-		   item->GetMusicInfoTag()->SetCompilation(true);
-		 else if (key == "MOOD")
-		   item->GetMusicInfoTag()->SetMood(
-			   StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-		 else if (key == "GENRE")
-		 {
-		   separators.emplace_back(",");
-		   item->GetMusicInfoTag()->SetGenre(StringUtils::Split(value, separators), true);
-		   separators.pop_back();
-		 }
-		 // comma separated list of instrument, person
-		 else if (key == "INSTRUMENTS")
-		 {
-		   tagdata = StringUtils::Split(value, ",");
-		   AddCommaDelimitedString(tagdata, separators, *item->GetMusicInfoTag());
-		 }
-		 // comma separated list of role, person
-         else if (key == "INVOLVEDPEOPLE")
-         {
-           tagdata = StringUtils::Split(value, ",");
-           AddCommaDelimitedString(tagdata, separators, *item->GetMusicInfoTag());
-         }
-      }
-      /* The comma separated lists are outside the Matroska spec
-         (see https://www.matroska.org/technical/tagging.html) as it states to use multiple simple
-         tags for eg 2 or more composers.  However, ffmpeg returns just the last tag and drops the
-         rest (https://trac.ffmpeg.org/ticket/9641).  Therefore until (if) it gets fixed, this is
-         the best solution.
-       */
-    }
+ 
     if (isAudioBook)
     {
+      while ((tag = av_dict_get(m_fctx->chapters[i]->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
+      {
+        {
+        if (StringUtils::CompareNoCase(tag->key, "title") == 0)
+           chaptitle = tag->value;
+        else if (StringUtils::CompareNoCase(tag->key, "artist") == 0)
+           chapauthor = tag->value;
+        else if (StringUtils::CompareNoCase(tag->key, "album") == 0)
+           chapalbum = tag->value;
+        // Prefer nero titles if we have them over QT titles and they are different
+        if (neroChapterResult.IsFound() && (i < ns) && (nero[i].title != chaptitle))
+              chaptitle = nero[i].title;
+        }
+      }
       item->GetMusicInfoTag()->SetTitle(chaptitle);
       item->GetMusicInfoTag()->SetAlbum(chapalbum.empty() ? album.empty() ? title : album
                                                           : chapalbum);
@@ -387,16 +272,34 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       if (!desc.empty())
         item->GetMusicInfoTag()->SetComment(desc);
     }
+    else
+    {
+      // process chapter tags for this track using file-order chapter UID
+      if (i < chapterOrder.size())
+      {
+        auto it = chapterTags.find(chapterOrder[i]);
+        if (it != chapterTags.end())
+        {
+          for (const auto& Tracktag : it->second)
+            CMusicInfoTagLoaderMatroska::ParseTag(Tracktag.first,
+                                                   Tracktag.second,
+                                                   separators,
+                                                   musicsep,
+                                                   *item->GetMusicInfoTag());
+        }
+      }
+    }
+ 
     item->GetMusicInfoTag()->SetTrackNumber(i + 1);
     item->GetMusicInfoTag()->SetLoaded(true);
 
     item->SetLabel(StringUtils::Format("{0:02}. {1} - {2}", i + 1,
-                                       item->GetMusicInfoTag()->GetAlbum(),
-                                       item->GetMusicInfoTag()->GetTitle()));
+                                         item->GetMusicInfoTag()->GetAlbum(),
+                                         item->GetMusicInfoTag()->GetTitle()));
     item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->start *
-                                                       av_q2d(m_fctx->chapters[i]->time_base)));
+                                                         av_q2d(m_fctx->chapters[i]->time_base)));
     item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->end *
-                                                     av_q2d(m_fctx->chapters[i]->time_base)));
+                                                       av_q2d(m_fctx->chapters[i]->time_base)));
     if (item->GetEndOffset() < 0 ||
         item->GetEndOffset() > CUtil::ConvertMilliSecsToSecs(m_fctx->duration))
     {
@@ -413,42 +316,15 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     item->GetMusicInfoTag()->SetDuration(
         CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
 
-    if (m_fctx->nb_chapters == 1)
-    {
-
-      item->GetMusicInfoTag()->SetDuration(end_time_mka_file);
-      if (item->GetMusicInfoTag()->GetDuration() <= 0)
-        item->GetMusicInfoTag()->SetDuration(end_time_m4b_file);
-    }
-
     item->SetProperty("item_start", item->GetStartOffset());
     item->SetProperty("audio_bookmark", item->GetStartOffset());
     if (!thumb.empty() && !chapter_error)
       item->SetArt("thumb", thumb);
     items.Add(item);
   }
-
   return true;
 }
 
-void CAudioBookFileDirectory::AddCommaDelimitedString(const std::vector<std::string>& data,
-                                                      const std::vector<std::string>& separators,
-                                                      MUSIC_INFO::CMusicInfoTag& musictag)
-{
-  if (!data.empty())
-  {
-    for (size_t i = 0; i + 1 < data.size(); i += 2)
-    {
-      std::vector<std::string> roles = StringUtils::Split(data[i], separators);
-      for (auto& role : roles)
-      {
-        StringUtils::Trim(role);
-        StringUtils::ToCapitalize(role);
-        musictag.AddArtistRole(role, StringUtils::Split(data[i + 1], ","));
-      }
-    }
-  }
-}
 bool CAudioBookFileDirectory::Exists(const CURL& url)
 {
   return CFile::Exists(url) && ContainsFiles(url);
@@ -468,7 +344,7 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
   m_fctx->pb = m_ioctx;
   m_fctx->flags |= AVFMT_FLAG_CUSTOM_IO;
 
-  if (file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
+  if (file.IoControl(IOControl::SEEK_POSSIBLE, nullptr) == 0)
     m_ioctx->seekable = 0;
 
   m_ioctx->max_packet_size = 32768;
@@ -477,7 +353,6 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
   av_probe_input_buffer(m_ioctx, &iformat, url.Get().c_str(), nullptr, 0, 0);
 
   bool contains = false;
-
   if (avformat_open_input(&m_fctx, url.Get().c_str(), iformat, nullptr) < 0)
   {
     if (m_fctx)
@@ -486,6 +361,7 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
     av_free(m_ioctx);
     return false;
   }
+
   m_fctx->flags |= AVFMT_FLAG_NOPARSE;
   int err = avformat_find_stream_info(m_fctx, NULL);
   if (err < 0)
