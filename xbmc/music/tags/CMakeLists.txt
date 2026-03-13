@@ -4,6 +4,7 @@ set(SOURCES MusicCodecInfoFFmpeg.cpp
             MusicInfoTagLoaderDatabase.cpp
             MusicInfoTagLoaderFactory.cpp
             MusicInfoTagLoaderFFmpeg.cpp
+            MusicInfoTagLoaderMatroska.cpp
             MusicInfoTagLoaderShn.cpp
             ReplayGain.cpp
             TagLibVFSStream.cpp
@@ -16,6 +17,7 @@ set(HEADERS ImusicInfoTagLoader.h
             MusicInfoTagLoaderDatabase.h
             MusicInfoTagLoaderFactory.h
             MusicInfoTagLoaderFFmpeg.h
+            MusicInfoTagLoaderMatroska.h
             MusicInfoTagLoaderShn.h
             ReplayGain.h
             TagLibVFSStream.h
