@@ -63,14 +63,13 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   if (blockSize > 1)
     bufferSize = blockSize;
   uint8_t* buffer = (uint8_t*)av_malloc(bufferSize);
-  AVIOContext* ioctx = avio_alloc_context(buffer, bufferSize, 0,
-                                          &file, vfs_file_read, NULL,
-                                          vfs_file_seek);
+  AVIOContext* ioctx =
+      avio_alloc_context(buffer, bufferSize, 0, &file, vfs_file_read, NULL, vfs_file_seek);
 
   AVFormatContext* fctx = avformat_alloc_context();
   fctx->pb = ioctx;
 
-  if (file.IoControl(IOControl::SEEK_POSSIBLE, NULL) != 1)
+  if (file.IoControl(IOCTRL_SEEK_POSSIBLE, NULL) != 1)
     ioctx->seekable = 0;
 
   const AVInputFormat* iformat = nullptr;
