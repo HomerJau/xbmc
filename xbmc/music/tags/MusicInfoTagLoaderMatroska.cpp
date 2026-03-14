@@ -18,12 +18,12 @@
 #include "utils/log.h"
 
 #include <taglib/matroskafile.h>
-#include "matroskatag.h"
-#include "matroskasimpletag.h"
-#include "matroskaattachments.h"
-#include "matroskaattachedfile.h"
-#include "matroskachapters.h"
-#include "matroskachapteredition.h"
+#include <taglib/matroskatag.h>
+#include <taglib/matroskasimpletag.h>
+#include <taglib/matroskaattachments.h>
+#include <taglib/matroskaattachedfile.h>
+#include <taglib/matroskachapters.h>
+#include <taglib/matroskachapteredition.h>
 #include <map>
 #include <vector>
 #include <exception>
