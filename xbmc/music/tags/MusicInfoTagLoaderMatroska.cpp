@@ -224,9 +224,9 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
     AddRole(tagdata, separators, tag);
   }
   else if (key == "REMIXED_BY" || key == "REMIXEDBY")
-    tag.AddArtistRole("Remixer", value);
+    tag.AddArtistRole("Remixer", StringUtils::Split(value, separators));
   else if (key == "MIXED_BY" || key == "MIXER")
-    tag.AddArtistRole("Mixer", value);
+    tag.AddArtistRole("Mixer", StringUtils::Split(value, separators));
   else if (key == "LYRICIST")
     tag.AddArtistRole("Lyricist", StringUtils::Split(value, separators));
   else if (key == "COMPOSER")
