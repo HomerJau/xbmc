@@ -12,18 +12,19 @@
 #include "ServiceBroker.h"
 #include "cores/FFmpeg.h"
 #include "filesystem/File.h"
+#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
 #include "utils/StringUtils.h"
 #include "utils/log.h"
 
 #include <taglib/matroskafile.h>
-#include "matroskatag.h"
-#include "matroskasimpletag.h"
-#include "matroskaattachments.h"
-#include "matroskaattachedfile.h"
-#include "matroskachapters.h"
-#include "matroskachapteredition.h"
+#include <taglib/matroskatag.h>
+#include <taglib/matroskasimpletag.h>
+#include <taglib/matroskaattachments.h>
+#include <taglib/matroskaattachedfile.h>
+#include <taglib/matroskachapters.h>
+#include <taglib/matroskachapteredition.h>
 #include <map>
 #include <vector>
 #include <exception>
@@ -63,14 +64,13 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   if (blockSize > 1)
     bufferSize = blockSize;
   uint8_t* buffer = (uint8_t*)av_malloc(bufferSize);
-  AVIOContext* ioctx = avio_alloc_context(buffer, bufferSize, 0,
-                                          &file, vfs_file_read, NULL,
-                                          vfs_file_seek);
+  AVIOContext* ioctx =
+      avio_alloc_context(buffer, bufferSize, 0, &file, vfs_file_read, NULL, vfs_file_seek);
 
   AVFormatContext* fctx = avformat_alloc_context();
   fctx->pb = ioctx;
 
-  if (file.IoControl(IOControl::SEEK_POSSIBLE, NULL) != 1)
+  if (file.IoControl(IOCTRL_SEEK_POSSIBLE, NULL) != 1)
     ioctx->seekable = 0;
 
   const AVInputFormat* iformat = nullptr;
@@ -93,7 +93,9 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
     separators.push_back(musicsep);
 
   tag.SetDuration(fctx->duration * av_q2d(av_get_time_base_q()));
-  
+    // Look for any embedded cover art
+  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(fctx, tag, art);
+
   avformat_close_input(&fctx);
   av_free(ioctx->buffer);
   av_free(ioctx);
@@ -225,9 +227,9 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
     AddRole(tagdata, separators, tag);
   }
   else if (key == "REMIXED_BY" || key == "REMIXEDBY")
-    tag.AddArtistRole("Remixer", value);
+    tag.AddArtistRole("Remixer", StringUtils::Split(value, separators));
   else if (key == "MIXED_BY" || key == "MIXER")
-    tag.AddArtistRole("Mixer", value);
+    tag.AddArtistRole("Mixer", StringUtils::Split(value, separators));
   else if (key == "LYRICIST")
     tag.AddArtistRole("Lyricist", StringUtils::Split(value, separators));
   else if (key == "COMPOSER")
@@ -243,12 +245,12 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
   // comma separated list of role, person
   else if (key == "INVOLVEDPEOPLE" || key == "ACTOR")
   {
-    std::vector<std::string> tagdata = StringUtils::Split(value, separators);
+    std::vector<std::string> tagdata = StringUtils::Split(value, ",");
     AddCommaDelimitedString(tagdata, separators, tag);
   }
   else if (key == "INSTRUMENTS")
   {
-    std::vector<std::string> tagdata = StringUtils::Split(value, separators);
+    std::vector<std::string> tagdata = StringUtils::Split(value, ",");
     AddCommaDelimitedString(tagdata, separators, tag);
   }
 }
