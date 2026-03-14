@@ -8,21 +8,24 @@
 #include "AudioBookFileDirectory.h"
 
 #include "FileItem.h"
-#include "FileItemList.h"
-#include "ServiceBroker.h"
+#include "TextureDatabase.h"
 #include "URL.h"
 #include "Util.h"
+#include "cores/FFmpeg.h"
 #include "filesystem/File.h"
-#include "imagefiles/ImageFileURL.h"
+#include "guilib/LocalizeStrings.h"
+#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
+// #include "imagefiles/ImageFileURL.h"
 #include "music/tags/MusicInfoTagLoaderMatroska.h"
-#include <map>
-#include "resources/LocalizeStrings.h"
-#include "resources/ResourcesComponent.h"
+#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
+#include "music/tags/MusicInfoTag.h"
+// #include "resources/ResourcesComponent.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
-#include "utils/Mp4ChplReader.h"
-#include "utils/StringUtils.h"
+// #include "utils/Mp4ChplReader.h"
 #include "utils/log.h"
+#include "utils/StringUtils.h"
+#include <map>
 #include <vector>
 
 
