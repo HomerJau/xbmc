@@ -8,21 +8,20 @@
 #include "AudioBookFileDirectory.h"
 
 #include "FileItem.h"
-#include "FileItemList.h"
-#include "ServiceBroker.h"
+#include "TextureDatabase.h"
 #include "URL.h"
 #include "Util.h"
+#include "cores/FFmpeg.h"
 #include "filesystem/File.h"
-#include "imagefiles/ImageFileURL.h"
+#include "guilib/LocalizeStrings.h"
+#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
 #include "music/tags/MusicInfoTagLoaderMatroska.h"
-#include <map>
-#include "resources/LocalizeStrings.h"
-#include "resources/ResourcesComponent.h"
+#include "music/tags/MusicInfoTag.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
-#include "utils/Mp4ChplReader.h"
-#include "utils/StringUtils.h"
 #include "utils/log.h"
+#include "utils/StringUtils.h"
+#include <map>
 #include <vector>
 
 
@@ -122,30 +121,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 
   std::string thumb;
   if (m_fctx->nb_chapters > 1)
-    thumb = IMAGE_FILES::URLFromFile(url.Get(), "music");
+    thumb = CTextureUtils::GetWrappedImageURL(url.Get(), "music");
 
-  ChplChapterResult neroChapterResult{chplNone};
-  std::vector<ChplChapter> nero;
-
-  if (isAudioBook)
-  {
-    neroChapterResult = CChplChapterReader::ScanNeroChapters(url, nero);
-    if (neroChapterResult.IsError())
-    {
-      CLog::Log(LOGERROR,
-                "AudioBookFileDirectory: Error scanning for Nero style chapters in file {}. The "
-                "error returned was {}",
-                url.GetRedacted(), *neroChapterResult.errorMessage);
-    }
-    else if (neroChapterResult.IsNone())
-    { // can't get here without some form of chapter so must be QT style chapters (chap atom)
-      CLog::Log(
-          LOGDEBUG,
-          "AudioBookFileDirectory: Scanned for nero style chapters but didn't find any in {}, "
-          "using QT chapters",
-          url.GetRedacted());
-    }
-  }
+  // Look for any embedded cover art
+  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(m_fctx, albumtag);
 
  // now get the AudioCodec etc for QQ Kodi-------------------------------------
   AVStream* st = nullptr;
@@ -221,7 +200,6 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       codec_name = "truehd_atmos";
     albumtag.SetCodec(codec_name);
   }
-  const size_t ns = nero.size();
 
   float chapter_size = 0;
   bool chapter_error = false;
@@ -241,8 +219,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     }
 
     tag = nullptr;
-    std::string chaptitle = StringUtils::Format(
-        CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25010), i + 1);
+    std::string chaptitle = StringUtils::Format(g_localizeStrings.Get(25010), i + 1);
     std::string chapauthor;
     std::string chapalbum;
 
@@ -253,17 +230,12 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     {
       while ((tag = av_dict_get(m_fctx->chapters[i]->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
       {
-        {
         if (StringUtils::CompareNoCase(tag->key, "title") == 0)
            chaptitle = tag->value;
         else if (StringUtils::CompareNoCase(tag->key, "artist") == 0)
            chapauthor = tag->value;
         else if (StringUtils::CompareNoCase(tag->key, "album") == 0)
            chapalbum = tag->value;
-        // Prefer nero titles if we have them over QT titles and they are different
-        if (neroChapterResult.IsFound() && (i < ns) && (nero[i].title != chaptitle))
-              chaptitle = nero[i].title;
-        }
       }
       item->GetMusicInfoTag()->SetTitle(chaptitle);
       item->GetMusicInfoTag()->SetAlbum(chapalbum.empty() ? album.empty() ? title : album
@@ -337,14 +309,13 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
     return false;
 
   uint8_t* buffer = (uint8_t*)av_malloc(32768);
-  m_ioctx = avio_alloc_context(buffer, 32768, 0, &file, cfile_file_read,
-                               nullptr, cfile_file_seek);
+  m_ioctx = avio_alloc_context(buffer, 32768, 0, &file, cfile_file_read, nullptr, cfile_file_seek);
 
   m_fctx = avformat_alloc_context();
   m_fctx->pb = m_ioctx;
   m_fctx->flags |= AVFMT_FLAG_CUSTOM_IO;
 
-  if (file.IoControl(IOControl::SEEK_POSSIBLE, nullptr) == 0)
+  if (file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
     m_ioctx->seekable = 0;
 
   m_ioctx->max_packet_size = 32768;
@@ -353,6 +324,7 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
   av_probe_input_buffer(m_ioctx, &iformat, url.Get().c_str(), nullptr, 0, 0);
 
   bool contains = false;
+
   if (avformat_open_input(&m_fctx, url.Get().c_str(), iformat, nullptr) < 0)
   {
     if (m_fctx)
@@ -361,7 +333,6 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
     av_free(m_ioctx);
     return false;
   }
-
   m_fctx->flags |= AVFMT_FLAG_NOPARSE;
   int err = avformat_find_stream_info(m_fctx, NULL);
   if (err < 0)
