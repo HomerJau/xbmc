@@ -121,7 +121,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 
   std::string thumb;
   if (m_fctx->nb_chapters > 1)
-    thumb = IMAGE_FILES::URLFromFile(url.Get(), "music");
+    thumb = CTextureUtils::GetWrappedImageURL(url.Get(), "music");
+
+  // Look for any embedded cover art
+  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(m_fctx, albumtag);
 
  // now get the AudioCodec etc for QQ Kodi-------------------------------------
   AVStream* st = nullptr;
@@ -197,7 +200,6 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       codec_name = "truehd_atmos";
     albumtag.SetCodec(codec_name);
   }
-  const size_t ns = nero.size();
 
   float chapter_size = 0;
   bool chapter_error = false;
@@ -217,8 +219,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     }
 
     tag = nullptr;
-    std::string chaptitle = StringUtils::Format(
-        CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25010), i + 1);
+    std::string chaptitle = StringUtils::Format(g_localizeStrings.Get(25010), i + 1);
     std::string chapauthor;
     std::string chapalbum;
 
@@ -308,14 +309,13 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
     return false;
 
   uint8_t* buffer = (uint8_t*)av_malloc(32768);
-  m_ioctx = avio_alloc_context(buffer, 32768, 0, &file, cfile_file_read,
-                               nullptr, cfile_file_seek);
+  m_ioctx = avio_alloc_context(buffer, 32768, 0, &file, cfile_file_read, nullptr, cfile_file_seek);
 
   m_fctx = avformat_alloc_context();
   m_fctx->pb = m_ioctx;
   m_fctx->flags |= AVFMT_FLAG_CUSTOM_IO;
 
-  if (file.IoControl(IOControl::SEEK_POSSIBLE, nullptr) == 0)
+  if (file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
     m_ioctx->seekable = 0;
 
   m_ioctx->max_packet_size = 32768;
@@ -324,6 +324,7 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
   av_probe_input_buffer(m_ioctx, &iformat, url.Get().c_str(), nullptr, 0, 0);
 
   bool contains = false;
+
   if (avformat_open_input(&m_fctx, url.Get().c_str(), iformat, nullptr) < 0)
   {
     if (m_fctx)
@@ -332,7 +333,6 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
     av_free(m_ioctx);
     return false;
   }
-
   m_fctx->flags |= AVFMT_FLAG_NOPARSE;
   int err = avformat_find_stream_info(m_fctx, NULL);
   if (err < 0)
