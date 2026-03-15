@@ -12,6 +12,7 @@
 #include "ServiceBroker.h"
 #include "cores/FFmpeg.h"
 #include "filesystem/File.h"
+#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
 #include "utils/StringUtils.h"
@@ -106,6 +107,10 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
     return true;
   for (const auto& t : fileTags)
     ParseTag(t.first, t.second, separators, musicsep, tag);
+
+  // Look for any embedded cover art
+  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(fctx, tag, art);
+
   /*!
   // now process the Chapter (track) if the Matroska file has a chapter
   // there is usually no chapters but there could be one, if > 1 
@@ -244,11 +249,13 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
   {
     std::vector<std::string> tagdata = StringUtils::Split(value, separators);
     AddCommaDelimitedString(tagdata, separators, tag);
+    AddRole(tagdata, separators, tag);
   }
   else if (key == "INSTRUMENTS")
   {
     std::vector<std::string> tagdata = StringUtils::Split(value, separators);
     AddCommaDelimitedString(tagdata, separators, tag);
+    AddRole(tagdata, separators, tag);
   }
 }
 
