@@ -93,7 +93,9 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
     separators.push_back(musicsep);
 
   tag.SetDuration(fctx->duration * av_q2d(av_get_time_base_q()));
-  
+    // Look for any embedded cover art
+  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(fctx, tag, art);
+
   avformat_close_input(&fctx);
   av_free(ioctx->buffer);
   av_free(ioctx);
@@ -107,10 +109,6 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
     return true;
   for (const auto& t : fileTags)
     ParseTag(t.first, t.second, separators, musicsep, tag);
-
-  // Look for any embedded cover art
-  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(fctx, tag, art);
-
   /*!
   // now process the Chapter (track) if the Matroska file has a chapter
   // there is usually no chapters but there could be one, if > 1 
@@ -247,15 +245,13 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
   // comma separated list of role, person
   else if (key == "INVOLVEDPEOPLE" || key == "ACTOR")
   {
-    std::vector<std::string> tagdata = StringUtils::Split(value, separators);
+    std::vector<std::string> tagdata = StringUtils::Split(value, ",");
     AddCommaDelimitedString(tagdata, separators, tag);
-    AddRole(tagdata, separators, tag);
   }
   else if (key == "INSTRUMENTS")
   {
-    std::vector<std::string> tagdata = StringUtils::Split(value, separators);
+    std::vector<std::string> tagdata = StringUtils::Split(value, ",");
     AddCommaDelimitedString(tagdata, separators, tag);
-    AddRole(tagdata, separators, tag);
   }
 }
 
