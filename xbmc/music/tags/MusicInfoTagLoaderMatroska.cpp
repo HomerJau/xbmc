@@ -17,7 +17,9 @@
 #include "settings/SettingsComponent.h"
 #include "utils/StringUtils.h"
 #include "utils/log.h"
-
+#ifdef TARGET_WINDOWS
+#include "platform/win32/CharsetConverter.h"
+#endif
 #include <taglib/matroskafile.h>
 #include <taglib/matroskatag.h>
 #include <taglib/matroskasimpletag.h>
@@ -306,13 +308,18 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(const std::string& fileNa
   fileTags.clear();
   chapterTags.clear();
   chapterOrder.clear();
-
   TagLib::Matroska::File* matroskaFile = nullptr;
   Matroska::Tag* matroskatag = nullptr;
 
   try
   {
+#ifdef TARGET_WINDOWS
+    // On Windows, convert UTF-8 filename to wide string for unicode support
+    std::wstring wFileName = KODI::PLATFORM::WINDOWS::ToW(fileName);
+    matroskaFile = new TagLib::Matroska::File(wFileName.c_str());
+#else
     matroskaFile = new TagLib::Matroska::File(fileName.c_str());
+#endif
     if (matroskaFile->isValid())
       matroskatag = matroskaFile->tag(false);
     if (!matroskatag)
@@ -320,7 +327,6 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(const std::string& fileNa
       delete matroskaFile;
       return;
     }
-
     int chapterCount = 0;
     /*!
     * first get all chapters and get the chapter name for each chapter and store
