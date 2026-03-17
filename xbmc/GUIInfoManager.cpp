@@ -11493,12 +11493,16 @@ void CGUIInfoManager::SetCurrentVideoTag(const CVideoInfoTag &tag)
 {
   m_currentFile->SetFromVideoInfoTag(tag);
   m_currentFile->SetStartOffset(0);
+
+  CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::Info, "OnChanged");
 }
 
 void CGUIInfoManager::SetCurrentSongTag(const MUSIC_INFO::CMusicInfoTag &tag)
 {
   m_currentFile->SetFromMusicInfoTag(tag);
   m_currentFile->SetStartOffset(0);
+
+  CServiceBroker::GetAnnouncementManager()->Announce(ANNOUNCEMENT::Info, "OnChanged");
 }
 
 const MUSIC_INFO::CMusicInfoTag* CGUIInfoManager::GetCurrentSongTag() const
