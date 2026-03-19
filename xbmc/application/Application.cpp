@@ -2137,9 +2137,12 @@ bool CApplication::Stop(int exitCode)
     // either a bug in core or misbehaving addons. so try saving
     // skin settings early
     CLog::Log(LOGINFO, "Saving skin settings");
-    if (g_SkinInfo != nullptr)
-      g_SkinInfo->SaveSettings();
-
+    if (CGUIComponent* gui = CServiceBroker::GetGUI())
+    {
+      auto skin = gui->GetSkinInfo();
+      if (skin)
+        skin->SaveSettings();
+    }
     m_bStop = true;
     // Add this here to keep the same ordering behaviour for now
     // Needs cleaning up

@@ -219,38 +219,43 @@ bool CApplicationSkinHandling::LoadSkin(const std::string& skinID)
 
 void CApplicationSkinHandling::UnloadSkin()
 {
-  if (g_SkinInfo != nullptr && m_saveSkinOnUnloading)
-    g_SkinInfo->SaveSettings();
+  CGUIComponent* gui = CServiceBroker::GetGUI();
+  if (gui == nullptr)
+    return;
+
+  std::shared_ptr<ADDON::CSkinInfo> skin = gui->GetSkinInfo();
+  if (skin && m_saveSkinOnUnloading)
+    skin->SaveSettings();
   else if (!m_saveSkinOnUnloading)
     m_saveSkinOnUnloading = true;
 
-  if (g_SkinInfo)
-    g_SkinInfo->Unload();
-
-  CGUIComponent* gui = CServiceBroker::GetGUI();
-  if (gui)
+ if (skin)
   {
-    gui->GetAudioManager().Enable(false);
-
-    gui->GetWindowManager().DeInitialize();
-    CServiceBroker::GetTextureCache()->Deinitialize();
-
-    // remove the skin-dependent window
-    gui->GetWindowManager().Delete(WINDOW_DIALOG_FULLSCREEN_INFO);
-
-    gui->GetTextureManager().Cleanup();
-    gui->GetLargeTextureManager().CleanupUnusedImages(true);
-
-    g_fontManager.Clear();
-
-    gui->GetColorManager().Clear();
-
-    gui->GetInfoManager().Clear();
+    skin->Unload();
+    CServiceBroker::GetResourcesComponent().GetLocalizeStrings().ClearAddonStrings(skin->ID());
   }
 
-  //  The g_SkinInfo shared_ptr ought to be reset here
-  // but there are too many places it's used without checking for nullptr
-  // and as a result a race condition on exit can cause a crash.
+  gui->GetAudioManager().Enable(false);
+
+  gui->GetWindowManager().DeInitialize();
+
+  const std::shared_ptr<CTextureCache> textureCache{CServiceBroker::GetTextureCache()};
+  if (textureCache)
+    textureCache->Deinitialize();
+
+  // remove the skin-dependent window
+  gui->GetWindowManager().Delete(WINDOW_DIALOG_FULLSCREEN_INFO);
+
+  gui->GetTextureManager().Cleanup();
+  gui->GetLargeTextureManager().CleanupUnusedImages(true);
+
+  g_fontManager.Clear();
+
+  gui->GetColorManager().Clear();
+
+  gui->GetInfoManager().Clear();
+
+  gui->UnloadSkin();
   CLog::Log(LOGINFO, "Unloaded skin");
 }
 
