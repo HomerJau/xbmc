@@ -80,10 +80,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   CMusicInfoTag albumtag;
 
   AVDictionaryEntry* tag=nullptr;
-  while ((tag = av_dict_get(m_fctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
+  if (isAudioBook)
   {
-    if (isAudioBook)
-    {
+     while ((tag = av_dict_get(m_fctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
+     {
       if (StringUtils::CompareNoCase(tag->key, "title") == 0)
         title = tag->value;
       else if (StringUtils::CompareNoCase(tag->key, "album") == 0)

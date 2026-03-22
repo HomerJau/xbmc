@@ -29,6 +29,7 @@
 #include <taglib/matroskachapteredition.h>
 #include <map>
 #include <vector>
+#include <array>
 #include <exception>
 
 using namespace MUSIC_INFO;
@@ -316,12 +317,12 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(const std::string& fileNa
 #ifdef TARGET_WINDOWS
     // On Windows, convert UTF-8 filename to wide string for unicode support
     std::wstring wFileName = KODI::PLATFORM::WINDOWS::ToW(fileName);
-    matroskaFile = new TagLib::Matroska::File(wFileName.c_str());
+    matroskaFile = new TagLib::Matroska::File(  wFileName.c_str());
 #else
     matroskaFile = new TagLib::Matroska::File(fileName.c_str());
 #endif
     if (matroskaFile->isValid())
-      matroskatag = matroskaFile->tag(false);
+      matroskatag = matroskaFile->tag(true);
     if (!matroskatag)
     {
       delete matroskaFile;
@@ -356,6 +357,45 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(const std::string& fileNa
         }
       }
 
+       /*!
+      * For parseing Matroska tags create a dummy chapter if no chapters are present
+      * to hold song tags for later processing foe Kodi internal tags
+      */
+      unsigned long long DummyChapterUid = 999000999000999;
+      if (chapterCount == 0)
+      {
+        chapterOrder.push_back(DummyChapterUid);
+        std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", "SongTags"}};
+        chapterTags[DummyChapterUid] = chapterTagList;
+      }
+
+      /*!
+      * Define tags that suppport multiple values and need to be concatenated into a
+      * single internal Kodi tag with a semicolon separator if more than one value is
+      * present. This is needed to support multiple values with Matrosaka
+      */
+      static constexpr std::array<const char*, 19> MULTIPLE_VALUE_TAGS = {
+          "ALBUMARTISTS",
+          "ALBUMARTISTSORT",
+          "ARTIST",
+          "ARTISTS",
+          "ARTISTSORT",
+          "BAND",
+          "COMPOSER",
+          "COMPOSERSORT",
+          "CONDUCTOR",
+          "ENGINEER"
+          "GENRE",
+          "LYRICIST",
+          "MIXER",
+          "MOOD",
+          "MUSICBRAINZ_ALBUMARTISTID",
+          "MUSICBRAINZ_ARTISTID",
+          "PERFORMER",
+          "PRODUCER",
+          "REMIXED",
+          "WRITER"};
+
       /*!
       * read all simple tags and group them by file (album or song files with no
       * chapters) or by chapter/track (if target type value is 30).
@@ -374,64 +414,98 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(const std::string& fileNa
       const TagLib::Matroska::SimpleTagsList& list = matroskatag->simpleTagsList();
       for (const TagLib::Matroska::SimpleTag& tag : list)
       {
-        unsigned long long chapterUid;
-        std::string upperName = tag.name().to8Bit(true);
-        StringUtils::ToUpper(upperName);
+        unsigned long long chapterUid = tag.chapterUid();
+        std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
         unsigned int targetTypeValue = static_cast<unsigned int>(tag.targetTypeValue());
-        if (targetTypeValue == 0 || targetTypeValue == 50) 
-        {
-          if (upperName == "TITLE" && targetTypeValue == 50)
-            upperName = "ALBUM";
 
-          auto it = fileTags.find(upperName);
-          if (it == fileTags.end())
+        if (targetTypeValue == 0 || targetTypeValue == 50)
+        { // both can be album tags (see note above)
+
+          if (TagName == "TITLE" && targetTypeValue == 50)
           {
-            fileTags[upperName] = tag.toString().to8Bit(true);
+            if (fileTags.find("TITLE") == fileTags.end())
+            {
+              fileTags["TITLE"] = tag.toString().to8Bit(true);
+            }
+            if (fileTags.find("ALBUM") == fileTags.end())
+            {
+              fileTags["ALBUM"] = tag.toString().to8Bit(true);
+            }
+          }
+          if (fileTags.find(TagName) == fileTags.end())
+          {
+            fileTags[TagName] = tag.toString().to8Bit(true);
           }
           else
           {
-            if (upperName != "ALBUM")
-              it->second += ";" + tag.toString().to8Bit(true);
+            // add tag or add a semicolan separated list if the tag already exists
+            if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
+                          TagName) != std::end(MULTIPLE_VALUE_TAGS))
+            {
+              // add value to existing tag with a semicolon separator if the tag already exists
+              std::string currentvalue = tag.toString().to8Bit(true);
+              fileTags[TagName] = currentvalue + ";" + tag.toString().to8Bit(true);
+            }
           }
         }
-        else if (targetTypeValue == 30) 
+        else if (targetTypeValue == 30) // chapter or song
         {
-          chapterUid = tag.chapterUid();
           if (chapterUid > 0)
           {
-            auto chapterIt = chapterTags.find(chapterUid);
-            if (chapterIt == chapterTags.end())
+            auto& chapterTagList = chapterTags.at(chapterUid);
+            // add tag or add a comma separated list if the tag already exists
+            auto it = chapterTagList.find(TagName);
+            if (it == chapterTagList.end())
             {
-              std::map<std::string, std::string> chapterTagList;
-              chapterTagList[upperName] = tag.toString().to8Bit(true);
-              chapterTags[chapterUid] = chapterTagList;
+              chapterTagList.emplace(TagName, tag.toString().to8Bit(true));
             }
             else
             {
-              auto& chapterTagList = chapterIt->second;
-              auto tagIt = chapterTagList.find(upperName);
-              if (tagIt == chapterTagList.end())
+              if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
+                            TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
-                chapterTagList[upperName] = tag.toString().to8Bit(true);
+                // add value to existing tag with a semicolon separator if the tag already exists
+                std::string currentValue = chapterTagList.at(TagName);
+                it->second = currentValue + ";" + tag.toString().to8Bit(true);
               }
-              else
+            }
+          }
+          else if (chapterCount == 0)
+          {
+            // save it to the Dummy chapter if there are no chapters, so song tags are not missed
+            // then they can be saved back as file tags
+            auto& chaptertaglist = chapterTags.at(DummyChapterUid);
+            if (chaptertaglist.find(TagName) == chaptertaglist.end())
+            {
+              chaptertaglist.emplace(TagName, tag.toString().to8Bit(true));
+            }
+            else
+            {
+              // add tag or add a semicolan separated list if the tag already exists
+              if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
+                            TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
-                tagIt->second += ";" + tag.toString().to8Bit(true);
+                // add value to existing tag with a semicolon separator if the tag already exists
+                std::string currentValue = chaptertaglist.at(TagName);
+                chaptertaglist[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
+                chapterTags[DummyChapterUid] = chaptertaglist;
               }
             }
           }
           else
           {
-            auto it = fileTags.find(upperName);
-            if (it == fileTags.end())
+            if (fileTags.find(TagName) == fileTags.end())
             {
-              fileTags[upperName] = tag.toString().to8Bit(true);
+              fileTags[TagName] = tag.toString().to8Bit(true);
             }
             else
             {
-              if (chapterCount == 0)
+              if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
+                            TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
-                it->second += ";" + tag.toString().to8Bit(true);
+                // add value to existing tag with a semicolon separator if the tag already exists
+                std::string currentvalue = tag.toString().to8Bit(true);
+                fileTags[TagName] = currentvalue + ";" + tag.toString().to8Bit(true);
               }
             }
           }
