@@ -22,6 +22,7 @@
 #include "utils/log.h"
 #include "utils/StringUtils.h"
 #include <map>
+#include <tuple>
 #include <vector>
 
 
@@ -80,10 +81,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   CMusicInfoTag albumtag;
 
   AVDictionaryEntry* tag=nullptr;
-  while ((tag = av_dict_get(m_fctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
+  if (isAudioBook)
   {
-    if (isAudioBook)
-    {
+     while ((tag = av_dict_get(m_fctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
+     {
       if (StringUtils::CompareNoCase(tag->key, "title") == 0)
         title = tag->value;
       else if (StringUtils::CompareNoCase(tag->key, "album") == 0)
@@ -97,7 +98,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 
   std::map<std::string, std::string> fileTags;
   std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
-  std::vector<unsigned long long> chapterOrder;
+  std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
   if (!isAudioBook)
   {
     CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags, chapterOrder);
@@ -115,8 +116,8 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
      * MP3Tag and others do not write ALBUM tag, but the TITLE tag tagType 50 
      * which is the Album tag type in Matroska tag spec
     */
-    if (albumtag.GetAlbum().empty())
-      albumtag.SetAlbum(albumtag.GetTitle());
+    /*if (albumtag.GetAlbum().empty())
+      albumtag.SetAlbum(albumtag.GetTitle());*/
   } 
 
   std::string thumb;
@@ -249,7 +250,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       // process chapter tags for this track using file-order chapter UID
       if (i < chapterOrder.size())
       {
-        auto it = chapterTags.find(chapterOrder[i]);
+        auto it = chapterTags.find(std::get<0>(chapterOrder[i]));
         if (it != chapterTags.end())
         {
           for (const auto& Tracktag : it->second)
