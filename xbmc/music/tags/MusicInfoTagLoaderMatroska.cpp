@@ -106,7 +106,7 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
 
   std::map<std::string, std::string> fileTags;
   std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
-  std::vector<unsigned long long> chapterOrder;
+  std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
   GetMatroskaMusicTags(strFileName, fileTags, chapterTags, chapterOrder);
 
   if (fileTags.empty())
