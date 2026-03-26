@@ -120,7 +120,7 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   */
   if (!chapterOrder.empty())
   {
-    auto it = chapterTags.find(chapterOrder[0]);
+    auto it = chapterTags.find(std::get<0>(chapterOrder[0]));
     if (it != chapterTags.end())
     {
       for (const auto& t : it->second)
