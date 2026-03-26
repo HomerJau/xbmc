@@ -12,6 +12,7 @@
 
 #include <string>
 #include <map>
+#include <tuple>
 #include <vector>
 
 namespace MUSIC_INFO
@@ -32,10 +33,11 @@ public:
                        const std::string& musicsep,
                        CMusicInfoTag& tag);
 
-  static void GetMatroskaMusicTags(const std::string& fileName,
-           std::map<std::string, std::string>& fileTags,
-           std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
-           std::vector<unsigned long long>& chapterOrder);
+   static void GetMatroskaMusicTags(
+      const std::string& fileName,
+      std::map<std::string, std::string>& fileTags,
+      std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
+      std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder);
  
 private:
   static void AddRole(const std::vector<std::string>& data,
