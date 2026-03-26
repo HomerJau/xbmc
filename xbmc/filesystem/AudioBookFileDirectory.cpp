@@ -22,6 +22,7 @@
 #include "utils/log.h"
 #include "utils/StringUtils.h"
 #include <map>
+#include <tuple>
 #include <vector>
 
 
@@ -97,7 +98,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 
   std::map<std::string, std::string> fileTags;
   std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
-  std::vector<unsigned long long> chapterOrder;
+  std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
   if (!isAudioBook)
   {
     CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags, chapterOrder);
