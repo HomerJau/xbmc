@@ -250,7 +250,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       // process chapter tags for this track using file-order chapter UID
       if (i < chapterOrder.size())
       {
-        auto it = chapterTags.find(chapterOrder[i]);
+        auto it = chapterTags.find(std::get<0>(chapterOrder[i]));
         if (it != chapterTags.end())
         {
           for (const auto& Tracktag : it->second)
