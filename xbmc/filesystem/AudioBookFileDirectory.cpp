@@ -116,8 +116,8 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
      * MP3Tag and others do not write ALBUM tag, but the TITLE tag tagType 50 
      * which is the Album tag type in Matroska tag spec
     */
-    if (albumtag.GetAlbum().empty())
-      albumtag.SetAlbum(albumtag.GetTitle());
+    /*if (albumtag.GetAlbum().empty())
+      albumtag.SetAlbum(albumtag.GetTitle());*/
   } 
 
   std::string thumb;

@@ -464,22 +464,33 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
       {
         unsigned long long chapterUid = tag.chapterUid();
         std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-        unsigned int targetTypeValue = static_cast<unsigned int>(tag.targetTypeValue());
+        unsigned long long targetTypeValue = tag.targetTypeValue();
 
         if (targetTypeValue == 0)
         {
-          // File/album level tags
-          if (fileTags.find(TagName) == fileTags.end())
+          std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
+          // TITLE with targetTypeValue 50 is the Album title in Matroska spec
+          if (TagName == "TITLE")
           {
-            fileTags[TagName] = tag.toString().to8Bit(true);
+            if (fileTags.find("ALBUM") == fileTags.end())
+              fileTags["ALBUM"] = tag.toString().to8Bit(true);
+            if (fileTags.find("TITLE") == fileTags.end())
+              fileTags["TITLE"] = tag.toString().to8Bit(true);
           }
           else
           {
-            if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
-                          TagName) != std::end(MULTIPLE_VALUE_TAGS))
+            if (fileTags.find(TagName) == fileTags.end())
             {
-              std::string currentValue = fileTags[TagName];
-              fileTags[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
+              fileTags[TagName] = tag.toString().to8Bit(true);
+            }
+            else
+            {
+              if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
+                            TagName) != std::end(MULTIPLE_VALUE_TAGS))
+              {
+                std::string currentValue = fileTags[TagName];
+                fileTags[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
+              }
             }
           }
         }
