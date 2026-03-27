@@ -382,6 +382,11 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
       * single internal Kodi tag with a semicolon separator if more than one value is
       * present. This is needed to support multiple values with Matrosaka
       */
+      /*!
+      * Define tags that suppport multiple values and need to be concatenated into a
+      * single internal Kodi tag with a semicolon separator if more than one value is
+      * present. This is needed to support multiple values with Matrosaka
+      */
       static constexpr std::array<const char*, 20> MULTIPLE_VALUE_TAGS = {
           "ALBUMARTISTS",
           "ALBUMARTISTSORT",
@@ -427,31 +432,29 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
       // Pass 1: Process album-level tags (targetTypeValue == 50)
       for (const TagLib::Matroska::SimpleTag& tag : list)
       {
-        unsigned int targetTypeValue = static_cast<unsigned int>(tag.targetTypeValue());
-        if (targetTypeValue != 50)
-          continue;
-
-        std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-
-        // TITLE with targetTypeValue 50 is the Album title in Matroska spec
-        if (TagName == "TITLE")
+        if (tag.targetTypeValue() == 50)
         {
-          if (fileTags.find("ALBUM") == fileTags.end())
-            fileTags["ALBUM"] = tag.toString().to8Bit(true);
-          if (fileTags.find("TITLE") == fileTags.end())
-            fileTags["TITLE"] = tag.toString().to8Bit(true);
-        }
-        else if (fileTags.find(TagName) == fileTags.end())
-        {
-          fileTags[TagName] = tag.toString().to8Bit(true);
-        }
-        else
-        {
-          if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS), TagName) !=
-              std::end(MULTIPLE_VALUE_TAGS))
+          std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
+          // TITLE with targetTypeValue 50 is the Album title in Matroska spec
+          if (TagName == "TITLE")
           {
-            std::string currentValue = fileTags[TagName];
-            fileTags[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
+            if (fileTags.find("ALBUM") == fileTags.end())
+              fileTags["ALBUM"] = tag.toString().to8Bit(true);
+            if (fileTags.find("TITLE") == fileTags.end())
+              fileTags["TITLE"] = tag.toString().to8Bit(true);
+          }
+          else if (fileTags.find(TagName) == fileTags.end())
+          {
+            fileTags[TagName] = tag.toString().to8Bit(true);
+          }
+          else
+          {
+            if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
+                          TagName) != std::end(MULTIPLE_VALUE_TAGS))
+            {
+              std::string currentValue = fileTags[TagName];
+              fileTags[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
+            }
           }
         }
       }
