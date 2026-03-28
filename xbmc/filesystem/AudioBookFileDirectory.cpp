@@ -259,6 +259,11 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
                                                    separators,
                                                    musicsep,
                                                    *item->GetMusicInfoTag());
+
+          item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(std::get<2>(chapterOrder[i])));
+          item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(std::get<3>(chapterOrder[i])));
+          item->GetMusicInfoTag()->SetDuration(
+              CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
         }
       }
     }
@@ -269,25 +274,25 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     item->SetLabel(StringUtils::Format("{0:02}. {1} - {2}", i + 1,
                                          item->GetMusicInfoTag()->GetAlbum(),
                                          item->GetMusicInfoTag()->GetTitle()));
-    item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->start *
-                                                         av_q2d(m_fctx->chapters[i]->time_base)));
-    item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->end *
-                                                       av_q2d(m_fctx->chapters[i]->time_base)));
-    if (item->GetEndOffset() < 0 ||
-        item->GetEndOffset() > CUtil::ConvertMilliSecsToSecs(m_fctx->duration))
-    {
-      if (i < m_fctx->nb_chapters - 1)
-        item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(
-            m_fctx->chapters[i + 1]->start * av_q2d(m_fctx->chapters[i + 1]->time_base)));
-      else
-      {
-        item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(end_time_mka_file)); // mka file
-        if (item->GetEndOffset() < 0)
-          item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(end_time_m4b_file)); // m4b file
-      }
-    }
-    item->GetMusicInfoTag()->SetDuration(
-        CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
+    //item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->start *
+    //                                                     av_q2d(m_fctx->chapters[i]->time_base)));
+    //item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->end *
+    //                                                   av_q2d(m_fctx->chapters[i]->time_base)));
+    //if (item->GetEndOffset() < 0 ||
+    //    item->GetEndOffset() > CUtil::ConvertMilliSecsToSecs(m_fctx->duration))
+    //{
+    //  if (i < m_fctx->nb_chapters - 1)
+    //    item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(
+    //        m_fctx->chapters[i + 1]->start * av_q2d(m_fctx->chapters[i + 1]->time_base)));
+    //  else
+    //  {
+    //    item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(end_time_mka_file)); // mka file
+    //    if (item->GetEndOffset() < 0)
+    //      item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(end_time_m4b_file)); // m4b file
+    //  }
+    //}
+    //item->GetMusicInfoTag()->SetDuration(
+    //    CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
 
     item->SetProperty("item_start", item->GetStartOffset());
     item->SetProperty("audio_bookmark", item->GetStartOffset());
