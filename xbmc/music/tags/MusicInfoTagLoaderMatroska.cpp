@@ -144,16 +144,16 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
   // Matroska Tag spec does not allow storing multi values in a single tag, but some tools
   // do it anyway using a separator. So we need to split the value using the separator and
   // then join it back using the music item separator from as.xml if needed. 
-  if (key == "ALBUM")
+   if (key == "ALBUM")
     tag.SetAlbum(value);
   else if (key == "ARTIST")
-  // tag.SetArtist(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+    // tag.SetArtist(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
     tag.SetArtist(value);
   else if (key == "ARTISTS")
     tag.SetMusicBrainzArtistHints(StringUtils::Split(value, separators));
-  else if (key == "ALBUMARTISTS" || key == "ALBUMARTSTS" || key == "ALBUM ARTISTS")
+  else if (key == "ALBUMARTISTS" || key == "ALBUM_ARTISTS")
     tag.SetAlbumArtist(value);
-  else if (key == "ALBUM_ARTIST" || key == "ALBUM ARTIST" || key == "ALBUMARTIST")
+  else if (key == "ALBUMARTIST" || key == "ALBUM_ARTIST")
     tag.SetAlbumArtist(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
   else if (key == "TITLE")
     tag.SetTitle(value);
@@ -161,9 +161,48 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
     tag.SetTrackNumber(std::stoi(value));
   else if (key == "DISC" || key == "DISCNUMBER")
     tag.SetDiscNumber(std::stoi(value));
+  else if (key == "GENRE")
+    tag.SetGenre(StringUtils::Split(value, musicsep), true);
   else if (key == "COMPILATION")
     tag.SetCompilation(true);
-  else if (key == "ENCODED_BY")
+  else if (key == "DATE" || key == "DATE_RELEASED" || key == "YEAR")
+    tag.SetReleaseDate(value);
+  else if (key == "DATE_RECORDED" || key == "ORIGINALDATE" || key == "ORIGINALYEAR" ||
+           key == "ORIGYEAR")
+    tag.SetOriginalDate(value);
+  else if (key == "MOOD")
+    tag.SetMood(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+  // genre could be comma delimited or not. Temporarily add the comma just in case.
+  // true trims any whitespace around the genre(s)
+  else if (key == "COMMENT")
+    tag.SetComment(value);
+  else if (key == "ARTIST-SORT" || key == "ARTISTSORT")
+    tag.SetArtistSort(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+  else if (key == "ALBUMARTISTSORT" || key == "SORT_ALBUM_ARTIST")
+    tag.SetAlbumArtistSort(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+  else if (key == "COMPOSERSORT")
+    tag.SetComposerSort(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
+  else if (key == "DISCSUBTITLE" || key == "SUBTITLE" || key == "SETSUBTITLE")
+    tag.SetDiscSubtitle(value);
+  else if (key == "MUSICBRAINZ_ARTISTID")
+    tag.SetMusicBrainzArtistID(StringUtils::Split(value, separators));
+  else if (key == "MUSICBRAINZ_ALBUMID")
+    tag.SetMusicBrainzAlbumID(value);
+  else if (key == "MUSICBRAINZ_RELEASEGROUPID")
+    tag.SetMusicBrainzReleaseGroupID(value);
+  else if (key == "MUSICBRAINZ_ALBUMARTISTID")
+    tag.SetMusicBrainzAlbumArtistID(StringUtils::Split(value, separators));
+  else if (key == "MUSICBRAINZ_TRACKID")
+    tag.SetMusicBrainzTrackID(value);
+  else if (key == "MUSICBRAINZ_ALBUMARTIST")
+  {
+    // tag.SetAlbumArtist(value);
+  }
+  else if (key == "MUSICBRAINZ_ALBUMTYPE")
+    tag.SetMusicBrainzReleaseType(value);
+  else if (key == "MUSICBRAINZ_ALBUMSTATUS")
+    tag.SetAlbumReleaseStatus(value);
+  else if (key == "ENCODED_BY" || key == "LANGUAGE")
   {
   }
   else if (key == "LABEL" || key == "PUBLISHER")
@@ -174,50 +213,6 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
   else if (key == "COPYRIGHT")
   {
   } // Copyright message
-  else if (key == "DATE" || key == "DATE_RELEASED" || key == "YEAR")
-    tag.SetReleaseDate(value);
-  else if (key == "DATE_RECORDED" || key == "ORIGINALDATE" || key == "ORIGINALYEAR" ||
-           key == "ORIGYEAR")
-    tag.SetOriginalDate(value);
-  else if (key == "LANGUAGE")
-  {
-  } // Languages
-  else if (key == "ARTIST-SORT" || key == "ARTISTSORT" || key == "ARTIST SORT")
-    tag.SetArtistSort(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-  else if (key == "ALBUMARTISTSORT" || key == "ALBUM ARTIST SORT" || key == "SORT_ALBUM_ARTIST")
-    tag.SetAlbumArtistSort(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-  else if (key == "COMPOSERSORT" || key == "COMPOSER SORT")
-    tag.SetComposerSort(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-  else if (key == "DISCSUBTITLE" || key == "SUBTITLE" || key == "SETSUBTITLE")
-    tag.SetDiscSubtitle(value);
-  else if (key == "MUSICBRAINZ ARTIST ID" || key == "MUSICBRAINZ_ARTISTID")
-    tag.SetMusicBrainzArtistID(StringUtils::Split(value, separators));
-  else if (key == "MUSICBRAINZ ALBUM ID" || key == "MUSICBRAINZ_ALBUMID")
-    tag.SetMusicBrainzAlbumID(value);
-  else if (key == "MUSICBRAINZ RELEASEGROUP ID" || key == "MUSICBRAINZ_RELEASEGROUPID" ||
-           key == "MUSICBRAINZ RELEASE GROUP ID")
-    tag.SetMusicBrainzReleaseGroupID(value);
-  else if (key == "MUSICBRAINZ ALBUM ARTIST ID" || key == "MUSICBRAINZ_ALBUMARTISTID" ||
-           key == "MUSICBRAINZ ALBUM ARTIST ID")
-    tag.SetMusicBrainzAlbumArtistID(StringUtils::Split(value, separators));
-  else if (key == "MUSICBRAINZ TRACKID" || key == "MUSICBRAINZ_TRACKID")
-    tag.SetMusicBrainzTrackID(value);
-  else if (key == "MUSICBRAINZ ALBUM ARTIST" || key == "MUSICBRAINZ_ALBUMARTIST")
-    tag.SetAlbumArtist(value);
-  else if (key == "MUSICBRAINZ ALBUM TYPE" || key == "MUSICBRAINZ_ALBUMTYPE")
-    tag.SetMusicBrainzReleaseType(value);
-  else if (key == "MUSICBRAINZ ALBUM STATUS" || key == "MUSICBRAINZ_ALBUMSTATUS")
-    tag.SetAlbumReleaseStatus(value);
-  else if (key == "MOOD")
-    tag.SetMood(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
-  // genre could be comma delimited or not. Temporarily add the comma just in case.
-  // true trims any whitespace around the genre(s)
-  else if (key == "GENRE")
-  {
-    tag.SetGenre(StringUtils::Split(value, musicsep), true);
-  }
-  else if (key == "COMMENT")
-    tag.SetComment(value);
   else if (key == "WRITER")
     tag.AddArtistRole("Writer", StringUtils::Split(value, separators));
   else if (key == "PERFORMER")
