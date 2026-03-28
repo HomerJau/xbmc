@@ -286,7 +286,7 @@ void CLinuxRendererGLES::LoadPlane(CYuvPlane& plane, int type,
     if (m_pixelStoreKey > 0)
     {
       pixelStoreChanged = true;
-      glPixelStorei(m_pixelStoreKey, stride);
+      glPixelStorei(m_pixelStoreKey, stride / bps);
     }
     else
     {
