@@ -1864,24 +1864,3 @@ void CLinuxRendererGLES::CheckVideoParameters(int index)
     m_toneMapMethod = toneMapMethod;
   }
 }
-
-// Add this class declaration inside namespace Shaders::GLES, after the YUV2RGBBobShader class declaration:
-
-class YUV2RGBFilterShader : public BaseYUV2RGBGLSLShader
-{
-public:
-  YUV2RGBFilterShader(EShaderFormat format,
-                      AVColorPrimaries dstPrimaries,
-                      AVColorPrimaries srcPrimaries,
-                      bool toneMap,
-                      ETONEMAPMETHOD toneMapMethod,
-                      ESCALINGMETHOD scalingMethod);
-  ~YUV2RGBFilterShader() override;
-
-protected:
-  void OnCompiledAndLinked() override;
-  bool OnEnabled() override;
-
-private:
-  ESCALINGMETHOD m_scalingMethod;
-};
