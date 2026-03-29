@@ -42,23 +42,6 @@ CLinuxRendererGLES::CLinuxRendererGLES()
 
   m_renderSystem = dynamic_cast<CRenderSystemGLES*>(CServiceBroker::GetRenderSystem());
 
-#if defined(GL_ES_VERSION_3_0)
-  int32_t intermediatePrecision = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
-      CSettings::SETTING_VIDEOPLAYER_HQSCALERPRECISION);
-  if (intermediatePrecision == 16)
-  {
-    m_intermediateFormat = GL_RGBA16F;
-    m_intermediateType = GL_FLOAT;
-  }
-  else if (intermediatePrecision == 10)
-  {
-    m_intermediateFormat = GL_RGB10_A2;
-    m_intermediateType = GL_UNSIGNED_INT_2_10_10_10_REV;
-  }
-  CLog::Log(LOGDEBUG, "GLES: HQ scaler precision={}, intermediate format={:#x}",
-            intermediatePrecision, static_cast<unsigned>(m_intermediateFormat));
-#endif
-
 #if defined (GL_UNPACK_ROW_LENGTH_EXT)
   if (m_renderSystem->IsExtSupported("GL_EXT_unpack_subimage"))
   {
@@ -141,7 +124,6 @@ bool CLinuxRendererGLES::Configure(const VideoPicture &picture, float fps, unsig
 
   m_bConfigured = true;
   m_scalingMethodGui = (ESCALINGMETHOD)-1;
-  m_scalingMethod = m_videoSettings.m_ScalingMethod;
 
   // Ensure that textures are recreated and rendering starts only after the 1st
   // frame is loaded after every call to Configure().
@@ -535,30 +517,18 @@ void CLinuxRendererGLES::UpdateVideoFilter()
   CRect viewRect;
   GetVideoRect(srcRect, dstRect, viewRect);
 
-  // TODO: ValidateRenderTarget runs before the display resolution is established
-  // (the WHITELIST/resolution ADJUST happens ~500ms after the first RenderUpdate).
-  // This causes UpdateVideoFilter to be called with a 0x0 viewport. The proper fix
-  // is in CRenderManager to defer rendering until the resolution is ready.
-  if (viewRect.Height() == 0 || viewRect.Width() == 0)
-    return;
-
-  // TODO: GL also checks nonLinStretchChanged and cmsChanged in the early exit
-  // and the reload check below. Add when non-linear stretch and CMS are ported to GLES.
   if (m_scalingMethodGui == m_videoSettings.m_ScalingMethod &&
-      viewRect.Height() == m_viewRect.Height() && viewRect.Width() == m_viewRect.Width())
+      viewRect.Height() == m_viewRect.Height() &&
+      viewRect.Width() == m_viewRect.Width())
   {
     return;
   }
-
-  // Viewport-only change doesn't need shader reload -- only method changes do
-  if (m_scalingMethod != m_videoSettings.m_ScalingMethod)
-    m_reloadShaders = true;
 
   m_scalingMethodGui = m_videoSettings.m_ScalingMethod;
   m_scalingMethod = m_scalingMethodGui;
   m_viewRect = viewRect;
 
-  if (!Supports(m_scalingMethod))
+  if(!Supports(m_scalingMethod))
   {
     CLog::Log(LOGWARNING,
               "CLinuxRendererGLES::UpdateVideoFilter - chosen scaling method {}, is not supported "
@@ -577,124 +547,70 @@ void CLinuxRendererGLES::UpdateVideoFilter()
 
   VerifyGLState();
 
-  if (m_scalingMethod == VS_SCALINGMETHOD_AUTO)
-  {
-    bool scaleSD = m_sourceHeight < 720 && m_sourceWidth < 1280;
-    bool scaleUp =
-        (int)m_sourceHeight < m_viewRect.Height() && (int)m_sourceWidth < m_viewRect.Width();
-    bool scaleFps =
-        m_fps <
-        CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_videoAutoScaleMaxFps +
-            0.01f;
-
-    if (Supports(VS_SCALINGMETHOD_LANCZOS3_FAST) && scaleSD && scaleUp && scaleFps)
-      m_scalingMethod = VS_SCALINGMETHOD_LANCZOS3_FAST;
-    else
-      m_scalingMethod = VS_SCALINGMETHOD_LINEAR;
-  }
-
   switch (m_scalingMethod)
   {
-    case VS_SCALINGMETHOD_NEAREST:
-    case VS_SCALINGMETHOD_LINEAR:
+  case VS_SCALINGMETHOD_NEAREST:
+  {
+    CLog::Log(LOGINFO, "GLES: Selecting single pass rendering");
+    SetTextureFilter(GL_NEAREST);
+    m_renderQuality = RQ_SINGLEPASS;
+    return;
+  }
+  case VS_SCALINGMETHOD_LINEAR:
+  {
+    CLog::Log(LOGINFO, "GLES: Selecting single pass rendering");
+    SetTextureFilter(GL_LINEAR);
+    m_renderQuality = RQ_SINGLEPASS;
+    return;
+  }
+  case VS_SCALINGMETHOD_LANCZOS2:
+  case VS_SCALINGMETHOD_SPLINE36_FAST:
+  case VS_SCALINGMETHOD_LANCZOS3_FAST:
+  case VS_SCALINGMETHOD_SPLINE36:
+  case VS_SCALINGMETHOD_LANCZOS3:
+  case VS_SCALINGMETHOD_CUBIC_B_SPLINE:
+  case VS_SCALINGMETHOD_CUBIC_MITCHELL:
+  case VS_SCALINGMETHOD_CUBIC_CATMULL:
+  case VS_SCALINGMETHOD_CUBIC_0_075:
+  case VS_SCALINGMETHOD_CUBIC_0_1:
+  {
+    if (m_renderMethod & RENDER_GLSL)
     {
-      // TODO: GL creates DefaultFilterShader here (or StretchFilterShader for
-      // non-linear stretch). Add when non-linear stretch is ported to GLES.
-      SetTextureFilter(m_scalingMethod == VS_SCALINGMETHOD_NEAREST ? GL_NEAREST : GL_LINEAR);
-      m_renderQuality = RQ_SINGLEPASS;
-      return;
-    }
-    case VS_SCALINGMETHOD_LANCZOS3_FAST:
-    case VS_SCALINGMETHOD_SPLINE36_FAST:
-    {
-      // On GLES 3.1+, FAST scalers use a single-pass combined YUV+convolution shader
-      // (YUV2RGBFilterShader with textureGather). On lower versions, fall through to
-      // multi-pass FBO path. Matches GL 4.0+ single-pass / GL <4.0 multi-pass pattern.
-      EShaderFormat fmt = GetShaderFormat();
-      if (fmt == SHADER_NV12 || (fmt >= SHADER_YV12 && fmt <= SHADER_YV12_16))
+      if (!m_fbo.fbo.Initialize())
       {
-        uint32_t major, minor;
-        m_renderSystem->GetRenderVersion(major, minor);
-        if (major >= 3 && minor >= 1)
-        {
-          SetTextureFilter(GL_LINEAR);
-          m_renderQuality = RQ_SINGLEPASS;
-          return;
-        }
-      }
-
-      [[fallthrough]];
-    }
-
-    case VS_SCALINGMETHOD_LANCZOS2:
-    case VS_SCALINGMETHOD_SPLINE36:
-    case VS_SCALINGMETHOD_LANCZOS3:
-    case VS_SCALINGMETHOD_CUBIC_B_SPLINE:
-    case VS_SCALINGMETHOD_CUBIC_MITCHELL:
-    case VS_SCALINGMETHOD_CUBIC_CATMULL:
-    case VS_SCALINGMETHOD_CUBIC_0_075:
-    case VS_SCALINGMETHOD_CUBIC_0_1:
-    {
-      if (m_renderMethod & RENDER_GLSL)
-      {
-        if (!m_fbo.fbo.Initialize())
-        {
-          CLog::Log(LOGERROR, "GLES: Error initializing FBO");
-          break;
-        }
-
-        // m_intermediateFormat and m_intermediateType are set in the constructor from
-        // hqscalerprecision setting. Try requested format first, fall back to GL_RGBA
-        // if unsupported (e.g. GLES 2.0 context where GL_RGB10_A2 / GL_RGBA16F are
-        // not available).
-        if (!m_fbo.fbo.CreateAndBindToTexture(GL_TEXTURE_2D, m_sourceWidth, m_sourceHeight,
-                                              m_intermediateFormat, m_intermediateType, GL_NEAREST))
-        {
-          if (m_intermediateFormat != GL_RGBA)
-          {
-            m_intermediateFormat = GL_RGBA;
-            m_intermediateType = GL_UNSIGNED_BYTE;
-            if (!m_fbo.fbo.CreateAndBindToTexture(GL_TEXTURE_2D, m_sourceWidth, m_sourceHeight,
-                                                  GL_RGBA))
-            {
-              CLog::Log(LOGERROR, "GLES: Error creating texture and binding to FBO");
-              break;
-            }
-          }
-          else
-          {
-            CLog::Log(LOGERROR, "GLES: Error creating texture and binding to FBO");
-            break;
-          }
-        }
-      }
-
-      // TODO: GL passes additional params: m_nonLinStretch, m_intermediateGammaCorrection,
-      // GLSLOutput* (for dithering and color management). Add when ported to GLES.
-      m_pVideoFilterShader = new ConvolutionFilterShader(m_scalingMethod);
-      if (!m_pVideoFilterShader->CompileAndLink())
-      {
-        CLog::Log(LOGERROR, "GLES: Error compiling and linking video filter shader");
+        CLog::Log(LOGERROR, "GLES: Error initializing FBO");
         break;
       }
 
-      CLog::Log(LOGINFO, "GLES: FBO intermediate format {:#x}",
-                static_cast<unsigned>(m_intermediateFormat));
-      CLog::Log(LOGINFO, "GLES: Selecting multi pass rendering");
-      SetTextureFilter(GL_LINEAR);
-      m_renderQuality = RQ_MULTIPASS;
-      return;
+      if (!m_fbo.fbo.CreateAndBindToTexture(GL_TEXTURE_2D, m_sourceWidth, m_sourceHeight, GL_RGBA))
+      {
+        CLog::Log(LOGERROR, "GLES: Error creating texture and binding to FBO");
+        break;
+      }
     }
-    case VS_SCALINGMETHOD_BICUBIC_SOFTWARE:
-    case VS_SCALINGMETHOD_LANCZOS_SOFTWARE:
-    case VS_SCALINGMETHOD_SINC_SOFTWARE:
-    case VS_SCALINGMETHOD_SINC8:
+
+    m_pVideoFilterShader = new ConvolutionFilterShader(m_scalingMethod);
+    if (!m_pVideoFilterShader->CompileAndLink())
     {
-      CLog::Log(LOGERROR, "GLES: TODO: This scaler has not yet been implemented");
+      CLog::Log(LOGERROR, "GLES: Error compiling and linking video filter shader");
       break;
     }
-    default:
-      break;
+
+    CLog::Log(LOGINFO, "GLES: Selecting multi pass rendering");
+    SetTextureFilter(GL_LINEAR);
+    m_renderQuality = RQ_MULTIPASS;
+      return;
+  }
+  case VS_SCALINGMETHOD_BICUBIC_SOFTWARE:
+  case VS_SCALINGMETHOD_LANCZOS_SOFTWARE:
+  case VS_SCALINGMETHOD_SINC_SOFTWARE:
+  case VS_SCALINGMETHOD_SINC8:
+  {
+    CLog::Log(LOGERROR, "GLES: TODO: This scaler has not yet been implemented");
+    break;
+  }
+  default:
+    break;
   }
 
   CLog::Log(LOGERROR, "GLES: Falling back to bilinear due to failure to init scaler");
@@ -706,30 +622,22 @@ void CLinuxRendererGLES::UpdateVideoFilter()
 
   m_fbo.fbo.Cleanup();
 
-  m_pVideoFilterShader = new DefaultFilterShader();
-  if (!m_pVideoFilterShader->CompileAndLink())
-  {
-    CLog::Log(LOGERROR, "CLinuxRendererGLES::UpdateVideoFilter: Error compiling and linking "
-                        "default video filter shader");
-  }
-
   SetTextureFilter(GL_LINEAR);
   m_renderQuality = RQ_SINGLEPASS;
 }
 
 void CLinuxRendererGLES::LoadShaders(int field)
 {
-  m_reloadShaders = false;
+  m_reloadShaders = 0;
 
   if (!LoadShadersHook())
   {
-    int requestedMethod = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
-        CSettings::SETTING_VIDEOPLAYER_RENDERMETHOD);
+    int requestedMethod = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_RENDERMETHOD);
     CLog::Log(LOGDEBUG, "GLES: Requested render method: {}", requestedMethod);
 
     ReleaseShaders();
 
-    switch (requestedMethod)
+    switch(requestedMethod)
     {
       case RENDER_METHOD_AUTO:
       case RENDER_METHOD_GLSL:
@@ -737,51 +645,22 @@ void CLinuxRendererGLES::LoadShaders(int field)
         // Try GLSL shaders if supported and user requested auto or GLSL.
         if (glCreateProgram())
         {
+          // create regular scan shader
+          CLog::Log(LOGINFO, "GLES: Selecting YUV 2 RGB shader");
+
           EShaderFormat shaderFormat = GetShaderFormat();
           m_toneMapMethod = m_videoSettings.m_ToneMapMethod;
-
-          // Try single-pass filter shader for FAST scalers on GLES 3.1+
-          if (m_renderQuality == RQ_SINGLEPASS &&
-              (m_scalingMethod == VS_SCALINGMETHOD_LANCZOS3_FAST ||
-               m_scalingMethod == VS_SCALINGMETHOD_SPLINE36_FAST))
-          {
-            m_pYUVProgShader = new YUV2RGBFilterShader(
-                shaderFormat, m_passthroughHDR ? m_srcPrimaries : AVColorPrimaries::AVCOL_PRI_BT709,
-                m_srcPrimaries, m_toneMap, m_toneMapMethod, m_scalingMethod);
-            // TODO: GL gates this on !m_cmsOn. Add when CMS is ported to GLES.
-            m_pYUVProgShader->SetConvertFullColorRange(m_fullRange);
-
-            CLog::Log(LOGINFO, "GLES: Selecting YUV 2 RGB shader with filter");
-
-            if (m_pYUVProgShader->CompileAndLink())
-            {
-              m_renderMethod = RENDER_GLSL;
-              UpdateVideoFilter();
-              break;
-            }
-            else
-            {
-              CLog::Log(LOGERROR, "GLES: Error enabling YUV2RGB GLSL shader");
-              delete m_pYUVProgShader;
-              m_pYUVProgShader = nullptr;
-            }
-          }
-
-          // Fall back to regular progressive shader
           m_pYUVProgShader = new YUV2RGBProgressiveShader(
               shaderFormat, m_passthroughHDR ? m_srcPrimaries : AVColorPrimaries::AVCOL_PRI_BT709,
               m_srcPrimaries, m_toneMap, m_toneMapMethod);
           m_pYUVProgShader->SetConvertFullColorRange(m_fullRange);
-
-          CLog::Log(LOGINFO, "GLES: Selecting YUV 2 RGB shader");
-
           m_pYUVBobShader = new YUV2RGBBobShader(
               shaderFormat, m_passthroughHDR ? m_srcPrimaries : AVColorPrimaries::AVCOL_PRI_BT709,
               m_srcPrimaries, m_toneMap, m_toneMapMethod);
           m_pYUVBobShader->SetConvertFullColorRange(m_fullRange);
 
-          if ((m_pYUVProgShader && m_pYUVProgShader->CompileAndLink()) &&
-              (m_pYUVBobShader && m_pYUVBobShader->CompileAndLink()))
+          if ((m_pYUVProgShader && m_pYUVProgShader->CompileAndLink())
+              && (m_pYUVBobShader && m_pYUVBobShader->CompileAndLink()))
           {
             m_renderMethod = RENDER_GLSL;
             UpdateVideoFilter();
@@ -800,7 +679,7 @@ void CLinuxRendererGLES::LoadShaders(int field)
       }
       default:
       {
-        m_renderMethod = -1;
+        m_renderMethod = -1 ;
         CLog::Log(LOGERROR, "GLES: render method not supported");
       }
     }
@@ -825,7 +704,7 @@ void CLinuxRendererGLES::ReleaseShaders()
 void CLinuxRendererGLES::UnInit()
 {
   CLog::Log(LOGDEBUG, "LinuxRendererGLES: Cleaning up GLES resources");
-  std::unique_lock lock(CServiceBroker::GetWinSystem()->GetGfxContext());
+  std::unique_lock<CCriticalSection> lock(CServiceBroker::GetWinSystem()->GetGfxContext());
 
   glFinish();
 
@@ -1072,14 +951,14 @@ void CLinuxRendererGLES::RenderSinglePass(int index, int field)
 
 void CLinuxRendererGLES::RenderToFBO(int index, int field)
 {
-  CPictureBuffer& buf = m_buffers[index];
-  CYuvPlane(&planes)[YuvImage::MAX_PLANES] = m_buffers[index].fields[field];
+  CPictureBuffer &buf = m_buffers[index];
+  CYuvPlane (&planes)[YuvImage::MAX_PLANES] = m_buffers[index].fields[field];
 
   CheckVideoParameters(index);
 
   if (m_reloadShaders)
   {
-    m_reloadShaders = false;
+    m_reloadShaders = 0;
     LoadShaders(m_currentField);
   }
 
@@ -1091,13 +970,14 @@ void CLinuxRendererGLES::RenderToFBO(int index, int field)
       return;
     }
 
-    if (!m_fbo.fbo.CreateAndBindToTexture(GL_TEXTURE_2D, m_sourceWidth, m_sourceHeight, GL_RGBA,
-                                          GL_SHORT))
+    if (!m_fbo.fbo.CreateAndBindToTexture(GL_TEXTURE_2D, m_sourceWidth, m_sourceHeight, GL_RGBA))
     {
       CLog::Log(LOGERROR, "GLES: Error creating texture and binding to FBO");
       return;
     }
   }
+
+  glDisable(GL_DEPTH_TEST);
 
   // Y
   glActiveTexture(GL_TEXTURE0);
@@ -1787,25 +1667,27 @@ bool CLinuxRendererGLES::SupportsMultiPassRendering()
 
 bool CLinuxRendererGLES::Supports(ESCALINGMETHOD method) const
 {
-  if (method == VS_SCALINGMETHOD_NEAREST || method == VS_SCALINGMETHOD_LINEAR ||
-      method == VS_SCALINGMETHOD_AUTO)
+  if(method == VS_SCALINGMETHOD_NEAREST ||
+     method == VS_SCALINGMETHOD_LINEAR)
   {
     return true;
   }
 
-  if (method == VS_SCALINGMETHOD_CUBIC_B_SPLINE || method == VS_SCALINGMETHOD_CUBIC_MITCHELL ||
-      method == VS_SCALINGMETHOD_CUBIC_CATMULL || method == VS_SCALINGMETHOD_CUBIC_0_075 ||
-      method == VS_SCALINGMETHOD_CUBIC_0_1 || method == VS_SCALINGMETHOD_LANCZOS2 ||
-      method == VS_SCALINGMETHOD_SPLINE36_FAST || method == VS_SCALINGMETHOD_LANCZOS3_FAST ||
-      method == VS_SCALINGMETHOD_SPLINE36 || method == VS_SCALINGMETHOD_LANCZOS3)
+  if (method == VS_SCALINGMETHOD_CUBIC_B_SPLINE ||
+      method == VS_SCALINGMETHOD_CUBIC_MITCHELL ||
+      method == VS_SCALINGMETHOD_CUBIC_CATMULL ||
+      method == VS_SCALINGMETHOD_CUBIC_0_075 ||
+      method == VS_SCALINGMETHOD_CUBIC_0_1 ||
+      method == VS_SCALINGMETHOD_LANCZOS2 ||
+      method == VS_SCALINGMETHOD_SPLINE36_FAST ||
+      method == VS_SCALINGMETHOD_LANCZOS3_FAST ||
+      method == VS_SCALINGMETHOD_SPLINE36 ||
+      method == VS_SCALINGMETHOD_LANCZOS3)
   {
     // if scaling is below level, avoid hq scaling
-    float scaleX =
-        fabs((static_cast<float>(m_sourceWidth) - m_destRect.Width()) / m_sourceWidth) * 100;
-    float scaleY =
-        fabs((static_cast<float>(m_sourceHeight) - m_destRect.Height()) / m_sourceHeight) * 100;
-    int minScale = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
-        CSettings::SETTING_VIDEOPLAYER_HQSCALERS);
+    float scaleX = fabs((static_cast<float>(m_sourceWidth) - m_destRect.Width()) / m_sourceWidth) * 100;
+    float scaleY = fabs((static_cast<float>(m_sourceHeight) - m_destRect.Height()) / m_sourceHeight) * 100;
+    int minScale = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_HQSCALERS);
     if (scaleX < minScale && scaleY < minScale)
     {
       return false;
@@ -1819,6 +1701,7 @@ bool CLinuxRendererGLES::Supports(ESCALINGMETHOD method) const
 
   return false;
 }
+
 CRenderInfo CLinuxRendererGLES::GetRenderInfo()
 {
   CRenderInfo info;
