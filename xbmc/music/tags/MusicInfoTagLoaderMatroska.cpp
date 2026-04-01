@@ -306,9 +306,9 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
   fileTags.clear();
   chapterTags.clear();
   chapterOrder.clear();
+
   TagLib::Matroska::File* matroskaFile = nullptr;
   Matroska::Tag* matroskatag = nullptr;
-
   try
   {
 #ifdef TARGET_WINDOWS
@@ -318,19 +318,27 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
 #else
     matroskaFile = new TagLib::Matroska::File(fileName.c_str());
 #endif
-    if (matroskaFile->isValid())
-      matroskatag = matroskaFile->tag(true);
-    if (!matroskatag)
+    if (!matroskaFile->isOpen())
     {
+      CLog::Log(LOGERROR, "could not open file for: {}", fileName);
       delete matroskaFile;
       return;
     }
-    int chapterCount = 0;
+    if (matroskaFile->isValid())
+      matroskatag = matroskaFile->tag(false);
+    if (!matroskatag)
+    {
+      CLog::Log(LOGERROR, "file has no tags: {}", fileName);
+      delete matroskaFile;
+      return;
+    }
+	
     /*!
     * first get all chapters and get the chapter name for each chapter and store
     * it in the albumtracktags map. Then we have chapter name for each chapter
     * (track) if Chapters are not tagged.
     */
+	int chapterCount = 0;
     TagLib::Matroska::Chapters* chapters = matroskaFile->chapters();
     if (chapters)
     {
