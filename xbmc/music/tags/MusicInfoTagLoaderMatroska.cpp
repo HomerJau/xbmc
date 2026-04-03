@@ -27,6 +27,8 @@
 #include <taglib/matroskaattachedfile.h>
 #include <taglib/matroskachapters.h>
 #include <taglib/matroskachapteredition.h>
+#include <taglib/audioproperties.h>
+#include <taglib/tfilestream.h>
 #include <map>
 #include <vector>
 #include <array>
@@ -120,7 +122,7 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   */
   if (!chapterOrder.empty())
   {
-    auto it = chapterTags.find(chapterOrder[0]);
+    auto it = chapterTags.find(std::get<0>(chapterOrder[0]));
     if (it != chapterTags.end())
     {
       for (const auto& t : it->second)
@@ -158,9 +160,25 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
   else if (key == "TITLE")
     tag.SetTitle(value);
   else if (key == "PART_NUMBER" || key == "TRACK")
-    tag.SetTrackNumber(std::stoi(value));
+  {
+    try
+    {
+      tag.SetTrackNumber(std::stoi(value));
+    }
+    catch (const std::exception&)
+    {
+    }
+  }
   else if (key == "DISC" || key == "DISCNUMBER")
-    tag.SetDiscNumber(std::stoi(value));
+  {
+    try
+    {
+      tag.SetDiscNumber(std::stoi(value));
+    }
+    catch (const std::exception&)
+    {
+    }
+  }
   else if (key == "GENRE")
     tag.SetGenre(StringUtils::Split(value, musicsep), true);
   else if (key == "COMPILATION")
@@ -306,7 +324,9 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
   fileTags.clear();
   chapterTags.clear();
   chapterOrder.clear();
+
   TagLib::Matroska::File* matroskaFile = nullptr;
+  TagLib::FileStream* matroskaStream = nullptr;
   Matroska::Tag* matroskatag = nullptr;
 
   try
@@ -314,23 +334,32 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
 #ifdef TARGET_WINDOWS
     // On Windows, convert UTF-8 filename to wide string for unicode support
     std::wstring wFileName = KODI::PLATFORM::WINDOWS::ToW(fileName);
-    matroskaFile = new TagLib::Matroska::File(wFileName.c_str());
+    matroskaStream = new TagLib::FileStream(wFileName.c_str(), true);
 #else
-    matroskaFile = new TagLib::Matroska::File(fileName.c_str());
+    matroskaStream = new TagLib::FileStream(fileName.c_str(), true);
 #endif
+    if (!matroskaStream->isOpen())
+    {
+      delete matroskaStream;
+      return;
+    }
+
+    matroskaFile = new TagLib::Matroska::File(matroskaStream, true, TagLib::AudioProperties::Fast);
     if (matroskaFile->isValid())
       matroskatag = matroskaFile->tag(true);
     if (!matroskatag)
     {
       delete matroskaFile;
+      delete matroskaStream;
       return;
     }
-    int chapterCount = 0;
+
     /*!
-    * first get all chapters and get the chapter name for each chapter and store
-    * it in the albumtracktags map. Then we have chapter name for each chapter
+    * First get all chapters and get the chapter name for each chapter and store
+    * it in the chapterTags map. Then we have chapter name for each chapter
     * (track) if Chapters are not tagged.
     */
+    int chapterCount = 0;
     TagLib::Matroska::Chapters* chapters = matroskaFile->chapters();
     if (chapters)
     {
@@ -342,92 +371,90 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
         {
           for (const auto& chapter : edition.chapterList())
           {
-            for (const auto& display : chapter.displayList())
-            {
-              std::map<std::string, std::string> chapterTagList = {
-                  {"CHAPTERNAME", display.string().toCString(true)}};
-              chapterTags[chapter.uid()] = chapterTagList;
-            }
-            double startTimeSecs = static_cast<double>(chapter.timeStart()) / 1000000000.0;
-            double endTimeSecs = static_cast<double>(chapter.timeEnd()) / 1000000000.0;
+            // FIX: Use first display only — previous code overwrote the map entry
+            // for every display, so only the last survived
             std::string chapterName;
             if (!chapter.displayList().isEmpty())
               chapterName = chapter.displayList().front().string().toCString(true);
+
+            std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", chapterName}};
+            chapterTags[chapter.uid()] = chapterTagList;
+
+            double startTimeSecs = static_cast<double>(chapter.timeStart()) / 1000000000.0;
+            double endTimeSecs = static_cast<double>(chapter.timeEnd()) / 1000000000.0;
             chapterOrder.push_back(
                 std::make_tuple(chapter.uid(), chapterName, startTimeSecs, endTimeSecs));
             chapterCount++;
           }
         }
       }
+    } // FIX: Close the if (chapters) block here — tag processing must happen
+    // regardless of whether the file has a Chapters element
 
-      /*!
-      * For parseing Matroska tags create a dummy chapter if no chapters are present
-      * to hold song tags for later processing foe Kodi internal tags
-      */
-      unsigned long long DummyChapterUid = 999000999000999;
-      if (chapterCount == 0)
+    /*!
+    * For parsing Matroska tags create a dummy chapter if no chapters are present
+    * to hold song tags for later processing for Kodi internal tags
+    */
+    unsigned long long DummyChapterUid = 999000999000999;
+    if (chapterCount == 0)
+    {
+      chapterOrder.push_back(std::make_tuple(DummyChapterUid, std::string("SongTags"), 0.0, 0.0));
+      std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", "SongTags"}};
+      chapterTags[DummyChapterUid] = chapterTagList;
+    }
+
+    /*!
+    * Define tags that support multiple values and need to be concatenated into a
+    * single internal Kodi tag with a semicolon separator if more than one value is
+    * present. This is needed to support multiple values with Matroska
+    */
+    static constexpr std::array<const char*, 20> MULTIPLE_VALUE_TAGS = {"ALBUMARTISTS",
+                                                                        "ALBUMARTISTSORT",
+                                                                        "ARTIST",
+                                                                        "ARTISTS",
+                                                                        "ARTISTSORT",
+                                                                        "BAND",
+                                                                        "COMPOSER",
+                                                                        "COMPOSERSORT",
+                                                                        "CONDUCTOR",
+                                                                        "ENGINEER",
+                                                                        "GENRE",
+                                                                        "LYRICIST",
+                                                                        "MIXER",
+                                                                        "MOOD",
+                                                                        "MUSICBRAINZ_ALBUMARTISTID",
+                                                                        "MUSICBRAINZ_ARTISTID",
+                                                                        "PERFORMER",
+                                                                        "PRODUCER",
+                                                                        "REMIXED",
+                                                                        "WRITER"};
+
+    /*!
+    * Read all simple tags and group them by file (album or song files with no
+    * chapters) or by chapter/track (if target type value is 30).
+    * Delimiter separated lists are outside the Matroska spec
+    * (see https://www.matroska.org/technical/tagging.html) it states to use
+    * multiple simple tags for eg 2 or more composers. To ensure Kodi can use
+    * multiple same name tags need create a single tag with multiple values in
+    * a semicolon delimited string (Kodi handles multiple values with
+    * delimited strings).
+    *
+    * Two pass approach:
+    * Pass 1: Process album-level tags (targetTypeValue == 50) first so album
+    *         metadata is established before track-level tags are processed.
+    *         Special handling for TITLE tag which maps to ALBUM in Kodi.
+    * Pass 2: Process file-level (targetTypeValue == 0) and chapter/song
+    *         (targetTypeValue == 30) tags.
+    */
+
+    const TagLib::Matroska::SimpleTagsList& list = matroskatag->simpleTagsList();
+
+    // Pass 1: Process album-level tags (targetTypeValue == 50)
+    for (const TagLib::Matroska::SimpleTag& tag : list)
+    {
+      if (tag.targetTypeValue() == 50)
       {
-        chapterOrder.push_back(std::make_tuple(DummyChapterUid, std::string("SongTags"), 0.0, 0.0));
-        std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", "SongTags"}};
-        chapterTags[DummyChapterUid] = chapterTagList;
-      }
-
-      /*!
-      * Define tags that suppport multiple values and need to be concatenated into a
-      * single internal Kodi tag with a semicolon separator if more than one value is
-      * present. This is needed to support multiple values with Matrosaka
-      */
-      static constexpr std::array<const char*, 20> MULTIPLE_VALUE_TAGS = {
-          "ALBUMARTISTS",
-          "ALBUMARTISTSORT",
-          "ARTIST",
-          "ARTISTS",
-          "ARTISTSORT",
-          "BAND",
-          "COMPOSER",
-          "COMPOSERSORT",
-          "CONDUCTOR",
-          "ENGINEER",
-          "GENRE",
-          "LYRICIST",
-          "MIXER",
-          "MOOD",
-          "MUSICBRAINZ_ALBUMARTISTID",
-          "MUSICBRAINZ_ARTISTID",
-          "PERFORMER",
-          "PRODUCER",
-          "REMIXED",
-          "WRITER"};
-
-      /*!
-      * read all simple tags and group them by file (album or song files with no
-      * chapters) or by chapter/track (if target type value is 30).
-      * Delimiter separated lists are outside the Matroska spec
-      * (see https://www.matroska.org/technical/tagging.html) it states to use
-      * multiple simple tags for eg 2 or more composers. To ensure Kodi can use
-      * multiple same name tags need create a single tag with multiple values in
-      * a semicolon delimited string (Kodi handles multiple values with
-      * delimited strings).
-      *
-      * Two pass approach:
-      * Pass 1: Process album-level tags (targetTypeValue == 50) first so album
-      *         metadata is established before track-level tags are processed.
-      *         Special handling for TITLE tag which maps to ALBUM in Kodi.
-      * Pass 2: Process file-level (targetTypeValue == 0) and chapter/song
-      *         (targetTypeValue == 30) tags.
-      */
-
-      const TagLib::Matroska::SimpleTagsList& list = matroskatag->simpleTagsList();
-
-      // Pass 1: Process album-level tags (targetTypeValue == 50)
-      for (const TagLib::Matroska::SimpleTag& tag : list)
-      {
-        unsigned int targetTypeValue = static_cast<unsigned int>(tag.targetTypeValue());
-        if (targetTypeValue != 50)
-          continue;
-
         std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-
         // TITLE with targetTypeValue 50 is the Album title in Matroska spec
         if (TagName == "TITLE")
         {
@@ -450,27 +477,95 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
           }
         }
       }
+    }
 
-      // Pass 2: Process file-level (targetTypeValue == 0) and chapter/song (targetTypeValue == 30) tags
-      for (const TagLib::Matroska::SimpleTag& tag : list)
+    // Pass 2: Process file-level (targetTypeValue == 0) and chapter/song (targetTypeValue == 30) tags
+    for (const TagLib::Matroska::SimpleTag& tag : list)
+    {
+      unsigned long long chapterUid = tag.chapterUid();
+      std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
+      unsigned long long targetTypeValue = tag.targetTypeValue();
+
+      if (targetTypeValue == 0)
       {
-        unsigned long long chapterUid = tag.chapterUid();
-        std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-        unsigned long long targetTypeValue = tag.targetTypeValue();
-
-        if (targetTypeValue == 0)
+        // FIX: Removed redundant TagName re-declaration that shadowed outer variable
+        // TITLE with targetTypeValue 0 maps to Album title (MKVToolNix default)
+        if (TagName == "TITLE")
         {
-          std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-          // TITLE with targetTypeValue 50 is the Album title in Matroska spec
-          if (TagName == "TITLE")
+          if (fileTags.find("ALBUM") == fileTags.end())
+            fileTags["ALBUM"] = tag.toString().to8Bit(true);
+          if (fileTags.find("TITLE") == fileTags.end())
+            fileTags["TITLE"] = tag.toString().to8Bit(true);
+        }
+        else
+        {
+          if (fileTags.find(TagName) == fileTags.end())
           {
-            if (fileTags.find("ALBUM") == fileTags.end())
-              fileTags["ALBUM"] = tag.toString().to8Bit(true);
-            if (fileTags.find("TITLE") == fileTags.end())
-              fileTags["TITLE"] = tag.toString().to8Bit(true);
+            fileTags[TagName] = tag.toString().to8Bit(true);
           }
           else
           {
+            if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
+                          TagName) != std::end(MULTIPLE_VALUE_TAGS))
+            {
+              std::string currentValue = fileTags[TagName];
+              fileTags[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
+            }
+          }
+        }
+      }
+      else if (targetTypeValue == 30)
+      {
+        if (chapterCount == 1)
+        {
+          // Single chapter: route to the only chapter with duplicate check
+          unsigned long long firstChapterUid = std::get<0>(chapterOrder[0]);
+          auto firstIt = chapterTags.find(firstChapterUid);
+          if (firstIt != chapterTags.end())
+          {
+            auto& chapterTagList = firstIt->second;
+            auto it = chapterTagList.find(TagName);
+            if (it == chapterTagList.end())
+            {
+              chapterTagList.emplace(TagName, tag.toString().to8Bit(true));
+            }
+            else
+            {
+              if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
+                            TagName) != std::end(MULTIPLE_VALUE_TAGS))
+              {
+                std::string newValue = tag.toString().to8Bit(true);
+                if (it->second.find(newValue) == std::string::npos)
+                  it->second = it->second + ";" + newValue;
+              }
+            }
+          }
+        }
+        else if (chapterUid > 0)
+        {
+          auto chapterIt = chapterTags.find(chapterUid);
+          if (chapterIt != chapterTags.end())
+          {
+            auto& chapterTagList = chapterIt->second;
+            auto it = chapterTagList.find(TagName);
+            if (it == chapterTagList.end())
+            {
+              chapterTagList.emplace(TagName, tag.toString().to8Bit(true));
+            }
+            else
+            {
+              if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
+                            TagName) != std::end(MULTIPLE_VALUE_TAGS))
+              {
+                std::string currentValue = it->second;
+                it->second = currentValue + ";" + tag.toString().to8Bit(true);
+              }
+            }
+          }
+          else
+          {
+            // FIX: Corrected comment — chapterUid > 0 but not found in chapterTags,
+            // so this chapter was not in the Chapters element. Fall back to fileTags.
             if (fileTags.find(TagName) == fileTags.end())
             {
               fileTags[TagName] = tag.toString().to8Bit(true);
@@ -486,103 +581,38 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
             }
           }
         }
-        else if (targetTypeValue == 30)
+        else
         {
-          if (chapterCount == 1)
+          // FIX: Handle chapterUid == 0 with targetTypeValue == 30 and chapterCount > 1.
+          // Some taggers (e.g. MP3Tag) save track tags without a chapterUid.
+          // Fall back to fileTags so these are not silently dropped.
+          if (fileTags.find(TagName) == fileTags.end())
           {
-            // Single chapter: route to the only chapter with duplicate check
-            unsigned long long firstChapterUid = std::get<0>(chapterOrder[0]);
-            auto firstIt = chapterTags.find(firstChapterUid);
-            if (firstIt != chapterTags.end())
-            {
-              auto& chapterTagList = firstIt->second;
-              auto it = chapterTagList.find(TagName);
-              if (it == chapterTagList.end())
-              {
-                chapterTagList.emplace(TagName, tag.toString().to8Bit(true));
-              }
-              else
-              {
-                if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
-                              TagName) != std::end(MULTIPLE_VALUE_TAGS))
-                {
-                  std::string newValue = tag.toString().to8Bit(true);
-                  if (it->second.find(newValue) == std::string::npos)
-                    it->second = it->second + ";" + newValue;
-                }
-              }
-            }
+            fileTags[TagName] = tag.toString().to8Bit(true);
           }
-          else if (chapterUid > 0)
+          else
           {
-            auto chapterIt = chapterTags.find(chapterUid);
-            if (chapterIt != chapterTags.end())
+            if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
+                          TagName) != std::end(MULTIPLE_VALUE_TAGS))
             {
-              auto& chapterTagList = chapterIt->second;
-              auto it = chapterTagList.find(TagName);
-              if (it == chapterTagList.end())
-              {
-                chapterTagList.emplace(TagName, tag.toString().to8Bit(true));
-              }
-              else
-              {
-                if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
-                              TagName) != std::end(MULTIPLE_VALUE_TAGS))
-                {
-                  std::string currentValue = it->second;
-                  it->second = currentValue + ";" + tag.toString().to8Bit(true);
-                }
-              }
-            }
-            else
-            {
-              // chapterUid == 0 with chapters present: fall back to fileTags
-              if (fileTags.find(TagName) == fileTags.end())
-              {
-                fileTags[TagName] = tag.toString().to8Bit(true);
-              }
-              else
-              {
-                if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
-                              TagName) != std::end(MULTIPLE_VALUE_TAGS))
-                {
-                  std::string currentValue = fileTags[TagName];
-                  fileTags[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
-                }
-              }
+              std::string currentValue = fileTags[TagName];
+              fileTags[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
             }
           }
         }
       }
-
-      ///* DEBUG */
-      //for (const auto& fileTag : fileTags)
-      //{
-      //  std::cout << "FILE TAG: " << fileTag.first << " = " << fileTag.second << std::endl;
-      //}
-
-      //int i = 0;
-      //for (const auto& chapterTagList : chapterTags)
-      //{
-      //  i++;
-      //  for (const auto& chapterTag : chapterTagList.second)
-      //  {
-      //    std::cout << "CHAPTER" << i << " TAG: " << chapterTag.first << " = " << chapterTag.second
-      //              << std::endl;
-      //  }
-      //}
-      
-
     }
-    if (matroskaFile)
-      delete matroskaFile;
+
+    // FIX: Proper cleanup with braces — delete both objects unconditionally
+    // (delete on nullptr is safe in C++)
+    delete matroskaFile;
+    delete matroskaStream;
   }
   catch (const std::exception& e)
   {
-    CLog::Log(LOGERROR, "GetMatroskaMusicTags: Exception while reading Matroska tags: {} {}", 
-        fileName, e.what());
-    if (matroskaFile)
-      delete matroskaFile;
+    CLog::Log(LOGERROR, "GetMatroskaMusicTags: Exception while reading Matroska tags: {} {}",
+              fileName, e.what());
+    delete matroskaFile;
+    delete matroskaStream;
   }
 }
-

@@ -55,8 +55,7 @@ CAudioBookFileDirectory::~CAudioBookFileDirectory(void)
   }
 }
 
-bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
-                                           CFileItemList &items)
+bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items)
 {
   if (!m_fctx && !ContainsFiles(url))
     return true;
@@ -65,26 +64,28 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   std::string author;
   std::string album;
   std::string desc;
-  
+
   std::vector<std::string> separators{" feat. ", " ft. ", " Feat. ", " Ft. ",  ";", ":",
-                                      "|", "#", "/", " with ", "&"};
+                                      "|",       "#",     "/",       " with ", "&"};
   const std::string musicsep =
       CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_musicItemSeparator;
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
     separators.push_back(musicsep); // add custom music separator from as.xml
 
-  const int end_time_m4b_file =
-      m_fctx->streams[0]->duration * av_q2d(m_fctx->streams[0]->time_base);
-  const int end_time_mka_file = m_fctx->duration * av_q2d(av_get_time_base_q());
+  // FIX: Guard streams[0] access — crash if file has no streams
+  const int end_time_m4b_file = (m_fctx->nb_streams > 0) ? m_fctx->streams[0]->duration *
+                                                               av_q2d(m_fctx->streams[0]->time_base)
+                                                         : 0;
+
   const bool isAudioBook = url.IsFileType("m4b");
   // Some tags are relevant to the whole album - these are read first
   CMusicInfoTag albumtag;
 
-  AVDictionaryEntry* tag=nullptr;
+  AVDictionaryEntry* tag = nullptr;
   if (isAudioBook)
   {
-     while ((tag = av_dict_get(m_fctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
-     {
+    while ((tag = av_dict_get(m_fctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
+    {
       if (StringUtils::CompareNoCase(tag->key, "title") == 0)
         title = tag->value;
       else if (StringUtils::CompareNoCase(tag->key, "album") == 0)
@@ -101,24 +102,17 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
   if (!isAudioBook)
   {
-    CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags, chapterOrder);
+    CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags,
+                                                      chapterOrder);
     if (fileTags.empty())
       return true;
     /*!
-     * initially just get the (file) Album level tags to be use in susequent tracks
-     * (chapters) processed below to create Kodi misc Songs
+     * initially just get the (file) Album level tags to be use in subsequent tracks
+     * (chapters) processed below to create Kodi music Songs
     */
     for (const auto& t : fileTags)
       CMusicInfoTagLoaderMatroska::ParseTag(t.first, t.second, separators, musicsep, albumtag);
-    /*!
-     * deal with non existsant ALBUM tag which was required in Kodi 21.3 and Kodi 22 
-     * before TagLib 2.2.1 bump Matroska support added in Kodi 22 Beta 1 
-     * MP3Tag and others do not write ALBUM tag, but the TITLE tag tagType 50 
-     * which is the Album tag type in Matroska tag spec
-    */
-    /*if (albumtag.GetAlbum().empty())
-      albumtag.SetAlbum(albumtag.GetTitle());*/
-  } 
+  }
 
   std::string thumb;
   if (m_fctx->nb_chapters > 1)
@@ -127,7 +121,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
   // Look for any embedded cover art
   CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(m_fctx, albumtag);
 
- // now get the AudioCodec etc for QQ Kodi-------------------------------------
+  // now get the AudioCodec etc
   AVStream* st = nullptr;
   std::string codec_name = "unknown";
   int streamIndex = -1;
@@ -139,11 +133,11 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       if (m_fctx->streams[i]->disposition & AV_DISPOSITION_DEFAULT)
       {
         streamIndex = i;
-        break; // Found a default audio stream, however, more than 1 stream can be set as default !!
+        break;
       }
     }
   }
-  // If no default stream was found, look for the first audio stream as usually highest quality 1st
+  // If no default stream was found, look for the first audio stream
   if (streamIndex == -1)
   {
     for (unsigned int i = 0; i < m_fctx->nb_streams; ++i)
@@ -151,7 +145,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       if (m_fctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
       {
         streamIndex = i;
-        break; // Found the first audio stream
+        break;
       }
     }
   }
@@ -202,19 +196,24 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
     albumtag.SetCodec(codec_name);
   }
 
-  float chapter_size = 0;
   bool chapter_error = false;
   for (unsigned int i = 0; i < m_fctx->nb_chapters; ++i)
   {
     if (m_fctx->chapters[i]->start < 0) // negative start time, ignore it
       continue;
-    chapter_size = m_fctx->chapters[i]->end * av_q2d(m_fctx->chapters[i]->time_base);
-    if (chapter_size < 1 && chapter_size > 0) // Chapter must have positive time of more than 1 sec
+
+    // FIX: Check chapter duration (end - start), not just end time.
+    // A tiny chapter at the 2-hour mark would have a large end time and pass
+    // the old filter. Checking duration catches it correctly.
+    double chapterStartSecs = m_fctx->chapters[i]->start * av_q2d(m_fctx->chapters[i]->time_base);
+    double chapterEndSecs = m_fctx->chapters[i]->end * av_q2d(m_fctx->chapters[i]->time_base);
+    double chapterDuration = chapterEndSecs - chapterStartSecs;
+    if (chapterDuration > 0 && chapterDuration < 1.0)
     {
       CLog::Log(LOGWARNING,
-                "CAudioBookFileDirectory: Tiny chapter of size {}s detected when scanning {} Most "
-                "likely this file needs the chapters correcting",
-                chapter_size, url.GetRedacted());
+                "CAudioBookFileDirectory: Tiny chapter of duration {}s detected when scanning {} "
+                "Most likely this file needs the chapters correcting",
+                chapterDuration, url.GetRedacted());
       chapter_error = true;
       continue;
     }
@@ -226,17 +225,17 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
 
     std::shared_ptr<CFileItem> item(new CFileItem(url.Get(), false));
     *item->GetMusicInfoTag() = albumtag;
- 
+
     if (isAudioBook)
     {
       while ((tag = av_dict_get(m_fctx->chapters[i]->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
       {
         if (StringUtils::CompareNoCase(tag->key, "title") == 0)
-           chaptitle = tag->value;
+          chaptitle = tag->value;
         else if (StringUtils::CompareNoCase(tag->key, "artist") == 0)
-           chapauthor = tag->value;
+          chapauthor = tag->value;
         else if (StringUtils::CompareNoCase(tag->key, "album") == 0)
-           chapalbum = tag->value;
+          chapalbum = tag->value;
       }
       item->GetMusicInfoTag()->SetTitle(chaptitle);
       item->GetMusicInfoTag()->SetAlbum(chapalbum.empty() ? album.empty() ? title : album
@@ -244,6 +243,27 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
       item->GetMusicInfoTag()->SetArtist(chapauthor.empty() ? author : chapauthor);
       if (!desc.empty())
         item->GetMusicInfoTag()->SetComment(desc);
+
+      // FIX: Restore start/end offsets and duration for m4b chapters.
+      // This was lost when the old shared offset code was commented out.
+      item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(chapterStartSecs));
+      int64_t endOffset;
+      if (m_fctx->chapters[i]->end > 0)
+      {
+        endOffset = CUtil::ConvertSecsToMilliSecs(chapterEndSecs);
+      }
+      else if (i + 1 < m_fctx->nb_chapters)
+      {
+        endOffset = CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i + 1]->start *
+                                                  av_q2d(m_fctx->chapters[i + 1]->time_base));
+      }
+      else
+      {
+        endOffset = CUtil::ConvertSecsToMilliSecs(end_time_m4b_file);
+      }
+      item->SetEndOffset(endOffset);
+      item->GetMusicInfoTag()->SetDuration(
+          CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
     }
     else
     {
@@ -254,11 +274,8 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
         if (it != chapterTags.end())
         {
           for (const auto& Tracktag : it->second)
-            CMusicInfoTagLoaderMatroska::ParseTag(Tracktag.first,
-                                                   Tracktag.second,
-                                                   separators,
-                                                   musicsep,
-                                                   *item->GetMusicInfoTag());
+            CMusicInfoTagLoaderMatroska::ParseTag(Tracktag.first, Tracktag.second, separators,
+                                                  musicsep, *item->GetMusicInfoTag());
 
           item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(std::get<2>(chapterOrder[i])));
           item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(std::get<3>(chapterOrder[i])));
@@ -267,32 +284,13 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url,
         }
       }
     }
- 
+
     item->GetMusicInfoTag()->SetTrackNumber(i + 1);
     item->GetMusicInfoTag()->SetLoaded(true);
 
     item->SetLabel(StringUtils::Format("{0:02}. {1} - {2}", i + 1,
-                                         item->GetMusicInfoTag()->GetAlbum(),
-                                         item->GetMusicInfoTag()->GetTitle()));
-    //item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->start *
-    //                                                     av_q2d(m_fctx->chapters[i]->time_base)));
-    //item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->end *
-    //                                                   av_q2d(m_fctx->chapters[i]->time_base)));
-    //if (item->GetEndOffset() < 0 ||
-    //    item->GetEndOffset() > CUtil::ConvertMilliSecsToSecs(m_fctx->duration))
-    //{
-    //  if (i < m_fctx->nb_chapters - 1)
-    //    item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(
-    //        m_fctx->chapters[i + 1]->start * av_q2d(m_fctx->chapters[i + 1]->time_base)));
-    //  else
-    //  {
-    //    item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(end_time_mka_file)); // mka file
-    //    if (item->GetEndOffset() < 0)
-    //      item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(end_time_m4b_file)); // m4b file
-    //  }
-    //}
-    //item->GetMusicInfoTag()->SetDuration(
-    //    CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
+                                       item->GetMusicInfoTag()->GetAlbum(),
+                                       item->GetMusicInfoTag()->GetTitle()));
 
     item->SetProperty("item_start", item->GetStartOffset());
     item->SetProperty("audio_bookmark", item->GetStartOffset());
