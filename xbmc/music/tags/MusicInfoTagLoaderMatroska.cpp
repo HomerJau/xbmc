@@ -27,6 +27,8 @@
 #include <taglib/matroskaattachedfile.h>
 #include <taglib/matroskachapters.h>
 #include <taglib/matroskachapteredition.h>
+#include <taglib/audioproperties.h>
+#include <taglib/tfilestream.h>
 #include <map>
 #include <vector>
 #include <array>
@@ -310,37 +312,38 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
   TagLib::Matroska::File* matroskaFile = nullptr;
   TagLib::FileStream* matroskaStream = nullptr;
   Matroska::Tag* matroskatag = nullptr;
-
+ 
   try
   {
 #ifdef TARGET_WINDOWS
     // On Windows, convert UTF-8 filename to wide string for unicode support
     std::wstring wFileName = KODI::PLATFORM::WINDOWS::ToW(fileName);
-    auto* stream = new TagLib::FileStream(wFileName.c_str(), true);
+    matroskaStream = new TagLib::FileStream(wFileName.c_str(), true);
 #else
-    auto* stream = new TagLib::FileStream(fileName.c_str(), true);
+    matroskaStream = new TagLib::FileStream(fileName.c_str(), true);
 #endif
-    if (!stream->isOpen())
+    if (!matroskaStream->isOpen())
     {
-      delete stream;
+      delete matroskaStream;
       return;
     }
 
-    matroskaFile = new TagLib::Matroska::File(stream, true, TagLib::AudioProperties::fast);
-    if (matroskaFile->isValid())
+    matroskaFile = new TagLib::Matroska::File(matroskaStream, true, TagLib::AudioProperties::Fast);
+    if (matroskaFile->isValid())            
       matroskatag = matroskaFile->tag(true);
     if (!matroskatag)
     {
       delete matroskaFile;
-      delete stream;
+      delete matroskaStream;
       return;
     }
-    int chapterCount = 0;
+
     /*!
     * first get all chapters and get the chapter name for each chapter and store
     * it in the albumtracktags map. Then we have chapter name for each chapter
     * (track) if Chapters are not tagged.
     */
+	int chapterCount = 0;
     TagLib::Matroska::Chapters* chapters = matroskaFile->chapters();
     if (chapters)
     {
