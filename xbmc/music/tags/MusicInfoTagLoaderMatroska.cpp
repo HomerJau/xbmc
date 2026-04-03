@@ -306,7 +306,9 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
   fileTags.clear();
   chapterTags.clear();
   chapterOrder.clear();
+  
   TagLib::Matroska::File* matroskaFile = nullptr;
+  TagLib::FileStream* matroskaStream = nullptr;
   Matroska::Tag* matroskatag = nullptr;
 
   try
@@ -314,15 +316,23 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
 #ifdef TARGET_WINDOWS
     // On Windows, convert UTF-8 filename to wide string for unicode support
     std::wstring wFileName = KODI::PLATFORM::WINDOWS::ToW(fileName);
-    matroskaFile = new TagLib::Matroska::File(wFileName.c_str());
+    auto* stream = new TagLib::FileStream(wFileName.c_str(), true);
 #else
-    matroskaFile = new TagLib::Matroska::File(fileName.c_str());
+    auto* stream = new TagLib::FileStream(fileName.c_str(), true);
 #endif
+    if (!stream->isOpen())
+    {
+      delete stream;
+      return;
+    }
+
+    matroskaFile = new TagLib::Matroska::File(stream, true, TagLib::AudioProperties::fast);
     if (matroskaFile->isValid())
       matroskatag = matroskaFile->tag(true);
     if (!matroskatag)
     {
       delete matroskaFile;
+      delete stream;
       return;
     }
     int chapterCount = 0;
@@ -579,6 +589,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     }
     if (matroskaFile)
       delete matroskaFile;
+      delete matroskaStream;
   }
   catch (const std::exception& e)
   {
@@ -586,6 +597,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
         fileName, e.what());
     if (matroskaFile)
       delete matroskaFile;
+      delete matroskaStream;
   }
 }
 
