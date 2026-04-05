@@ -507,7 +507,7 @@ bool CGUIWindowVideoBase::ShowInfoAndRefresh(const CFileItemPtr& item, const Scr
   if (ret && IsActive())
   {
     const int itemNumber{m_viewControl.GetSelectedItem()};
-    Refresh();
+    Refresh(true);
     m_viewControl.SetSelectedItem(itemNumber);
   }
 
