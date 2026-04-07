@@ -98,8 +98,8 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   }
 
   std::map<std::string, std::string> fileTags;
-  std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
-  std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
+  std::map<ULONG, std::map<std::string, std::string>> chapterTags;
+  std::vector<std::tuple<ULONG, std::string, double, double>> chapterOrder;
   if (!isAudioBook)
   {
     CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags,
@@ -308,18 +308,17 @@ bool CAudioBookFileDirectory::Exists(const CURL& url)
 
 bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
 {
-  CFile file;
-  if (!file.Open(url))
+  if (!m_file.Open(url))
     return false;
 
   uint8_t* buffer = (uint8_t*)av_malloc(32768);
-  m_ioctx = avio_alloc_context(buffer, 32768, 0, &file, cfile_file_read, nullptr, cfile_file_seek);
+  m_ioctx = avio_alloc_context(buffer, 32768, 0, &m_file, cfile_file_read, nullptr, cfile_file_seek);
 
   m_fctx = avformat_alloc_context();
   m_fctx->pb = m_ioctx;
   m_fctx->flags |= AVFMT_FLAG_CUSTOM_IO;
 
-  if (file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
+  if (m_file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
     m_ioctx->seekable = 0;
 
   m_ioctx->max_packet_size = 32768;

@@ -29,6 +29,7 @@
 #include <taglib/matroskachapteredition.h>
 #include <taglib/audioproperties.h>
 #include <taglib/tfilestream.h>
+#include <taglib/tiostream.h>
 #include <map>
 #include <vector>
 #include <array>
@@ -38,6 +39,69 @@
 using namespace MUSIC_INFO;
 using namespace XFILE;
 using namespace TagLib;
+
+// VFS-backed TagLib IOStream adapter — allows TagLib to read through
+// Kodi's virtual filesystem (supports nfs://, smb://, etc.)
+class KodiTagLibStream : public TagLib::IOStream
+{
+public:
+  KodiTagLibStream(const std::string& fileName) : m_fileName(fileName) {}
+  ~KodiTagLibStream() override { m_file.Close(); }
+
+  TagLib::FileName name() const override { return m_fileName.c_str(); }
+
+  bool isOpen() const override { return m_open; }
+
+  bool open()
+  {
+    m_open = m_file.Open(m_fileName);
+    return m_open;
+  }
+
+  TagLib::ByteVector readBlock(size_t length) override
+  {
+    TagLib::ByteVector bv(static_cast<unsigned int>(length), 0);
+    ssize_t read = m_file.Read(bv.data(), length);
+    if (read > 0)
+      bv.resize(static_cast<unsigned int>(read));
+    else
+      bv.clear();
+    return bv;
+  }
+
+  void writeBlock(const TagLib::ByteVector&) override {}
+  void insert(const TagLib::ByteVector&, TagLib::offset_t, size_t) override {}
+  void removeBlock(TagLib::offset_t, size_t) override {}
+  bool readOnly() const override { return true; }
+
+  void seek(TagLib::offset_t offset, TagLib::IOStream::Position p) override
+  {
+    int whence = SEEK_SET;
+    if (p == TagLib::IOStream::Current)
+      whence = SEEK_CUR;
+    else if (p == TagLib::IOStream::End)
+      whence = SEEK_END;
+    m_file.Seek(offset, whence);
+  }
+
+  TagLib::offset_t tell() const override
+  {
+    return m_file.GetPosition();
+  }
+
+  TagLib::offset_t length() override
+  {
+    return m_file.GetLength();
+  }
+
+  void truncate(TagLib::offset_t) override {}
+  void clear() override {}
+
+private:
+  std::string m_fileName;
+  XFILE::CFile m_file;
+  bool m_open = false;
+};
 
 static int vfs_file_read(void* h, uint8_t* buf, int size)
 {
@@ -107,8 +171,8 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   av_free(ioctx);
 
   std::map<std::string, std::string> fileTags;
-  std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
-  std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
+  std::map<ULONG, std::map<std::string, std::string>> chapterTags;
+  std::vector<std::tuple<ULONG, std::string, double, double>> chapterOrder;
   GetMatroskaMusicTags(strFileName, fileTags, chapterTags, chapterOrder);
 
   if (fileTags.empty())
@@ -263,11 +327,13 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
   else if (key == "INVOLVEDPEOPLE" || key == "ACTOR")
   {
     std::vector<std::string> tagdata = StringUtils::Split(value, ",");
+
     AddCommaDelimitedString(tagdata, separators, tag);
   }
   else if (key == "INSTRUMENTS")
   {
     std::vector<std::string> tagdata = StringUtils::Split(value, ",");
+
     AddCommaDelimitedString(tagdata, separators, tag);
   }
 }
@@ -318,27 +384,21 @@ void CMusicInfoTagLoaderMatroska::AddCommaDelimitedString(
 void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     const std::string& fileName,
     std::map<std::string, std::string>& fileTags,
-    std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
-    std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder)
+    std::map<ULONG, std::map<std::string, std::string>>& chapterTags,
+    std::vector<std::tuple<ULONG, std::string, double, double>>& chapterOrder)
 {
   fileTags.clear();
   chapterTags.clear();
   chapterOrder.clear();
 
   TagLib::Matroska::File* matroskaFile = nullptr;
-  TagLib::FileStream* matroskaStream = nullptr;
+  KodiTagLibStream* matroskaStream = nullptr;
   Matroska::Tag* matroskatag = nullptr;
 
   try
   {
-#ifdef TARGET_WINDOWS
-    // On Windows, convert UTF-8 filename to wide string for unicode support
-    std::wstring wFileName = KODI::PLATFORM::WINDOWS::ToW(fileName);
-    matroskaStream = new TagLib::FileStream(wFileName.c_str(), true);
-#else
-    matroskaStream = new TagLib::FileStream(fileName.c_str(), true);
-#endif
-    if (!matroskaStream->isOpen())
+    matroskaStream = new KodiTagLibStream(fileName);
+    if (!matroskaStream->open())
     {
       delete matroskaStream;
       return;
@@ -395,7 +455,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     * For parsing Matroska tags create a dummy chapter if no chapters are present
     * to hold song tags for later processing for Kodi internal tags
     */
-    unsigned long long DummyChapterUid = 999000999000999;
+    ULONG DummyChapterUid = 999000999000999;
     if (chapterCount == 0)
     {
       chapterOrder.push_back(std::make_tuple(DummyChapterUid, std::string("SongTags"), 0.0, 0.0));
@@ -413,6 +473,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                                                                         "ARTIST",
                                                                         "ARTISTS",
                                                                         "ARTISTSORT",
+                                                                        "ARRANGER",
                                                                         "BAND",
                                                                         "COMPOSER",
                                                                         "COMPOSERSORT",
@@ -427,7 +488,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                                                                         "PERFORMER",
                                                                         "PRODUCER",
                                                                         "REMIXED",
-                                                                        "WRITER"};
+                                                                        "WRITER"}; // clang-format on
 
     /*!
     * Read all simple tags and group them by file (album or song files with no
@@ -482,9 +543,9 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     // Pass 2: Process file-level (targetTypeValue == 0) and chapter/song (targetTypeValue == 30) tags
     for (const TagLib::Matroska::SimpleTag& tag : list)
     {
-      unsigned long long chapterUid = tag.chapterUid();
+      ULONG chapterUid = tag.chapterUid();
       std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-      unsigned long long targetTypeValue = tag.targetTypeValue();
+      ULONG targetTypeValue = tag.targetTypeValue();
 
       if (targetTypeValue == 0)
       {
@@ -519,7 +580,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
         if (chapterCount == 1)
         {
           // Single chapter: route to the only chapter with duplicate check
-          unsigned long long firstChapterUid = std::get<0>(chapterOrder[0]);
+          ULONG firstChapterUid = std::get<0>(chapterOrder[0]);
           auto firstIt = chapterTags.find(firstChapterUid);
           if (firstIt != chapterTags.end())
           {
