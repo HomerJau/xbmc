@@ -171,8 +171,8 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   av_free(ioctx);
 
   std::map<std::string, std::string> fileTags;
-  std::map<ULONG, std::map<std::string, std::string>> chapterTags;
-  std::vector<std::tuple<ULONG, std::string, double, double>> chapterOrder;
+  std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
+  std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
   GetMatroskaMusicTags(strFileName, fileTags, chapterTags, chapterOrder);
 
   if (fileTags.empty())
@@ -384,8 +384,8 @@ void CMusicInfoTagLoaderMatroska::AddCommaDelimitedString(
 void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     const std::string& fileName,
     std::map<std::string, std::string>& fileTags,
-    std::map<ULONG, std::map<std::string, std::string>>& chapterTags,
-    std::vector<std::tuple<ULONG, std::string, double, double>>& chapterOrder)
+    std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
+    std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder)
 {
   fileTags.clear();
   chapterTags.clear();
@@ -455,7 +455,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     * For parsing Matroska tags create a dummy chapter if no chapters are present
     * to hold song tags for later processing for Kodi internal tags
     */
-    ULONG DummyChapterUid = 999000999000999;
+    unsigned long long DummyChapterUid = 999000999000999;
     if (chapterCount == 0)
     {
       chapterOrder.push_back(std::make_tuple(DummyChapterUid, std::string("SongTags"), 0.0, 0.0));
@@ -543,9 +543,9 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     // Pass 2: Process file-level (targetTypeValue == 0) and chapter/song (targetTypeValue == 30) tags
     for (const TagLib::Matroska::SimpleTag& tag : list)
     {
-      ULONG chapterUid = tag.chapterUid();
+      unsigned long long chapterUid = tag.chapterUid();
       std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-      ULONG targetTypeValue = tag.targetTypeValue();
+      unsigned long long targetTypeValue = tag.targetTypeValue();
 
       if (targetTypeValue == 0)
       {
@@ -580,7 +580,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
         if (chapterCount == 1)
         {
           // Single chapter: route to the only chapter with duplicate check
-          ULONG firstChapterUid = std::get<0>(chapterOrder[0]);
+          unsigned long long firstChapterUid = std::get<0>(chapterOrder[0]);
           auto firstIt = chapterTags.find(firstChapterUid);
           if (firstIt != chapterTags.end())
           {
