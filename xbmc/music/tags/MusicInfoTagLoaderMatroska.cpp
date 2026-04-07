@@ -468,7 +468,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     * single internal Kodi tag with a semicolon separator if more than one value is
     * present. This is needed to support multiple values with Matroska
     */
-    static constexpr std::array<const char*, 20> MULTIPLE_VALUE_TAGS = {"ALBUMARTISTS",
+    static constexpr std::array<const char*, 21> MULTIPLE_VALUE_TAGS = {"ALBUMARTISTS",
                                                                         "ALBUMARTISTSORT",
                                                                         "ARTIST",
                                                                         "ARTISTS",
