@@ -481,6 +481,7 @@ bool CPlayList::Expand(int position)
     if (!(*playlist)[i]->HasProperty("item_start"))
       (*playlist)[i]->SetStartOffset(item->GetStartOffset());
     if (!(*playlist)[i]->HasProperty("BasePath"))
+      (*playlist)[i]->SetProperty("BasePath", playlist->m_strBasePath);
   }
 
   if (playlist->size() <= 0)
