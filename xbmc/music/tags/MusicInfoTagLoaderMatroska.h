@@ -36,9 +36,9 @@ public:
   static void GetMatroskaMusicTags(
       const std::string& fileName,
       std::map<std::string, std::string>& fileTags,
-      std::map<ULONG, std::map<std::string, std::string>>& chapterTags,
-      std::vector<std::tuple<ULONG, std::string, double, double>>& chapterOrder);
- 
+      std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
+      std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder);
+
 private:
   static void AddRole(const std::vector<std::string>& data,
                       const std::vector<std::string>& separators,
