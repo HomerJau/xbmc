@@ -31,5 +31,6 @@ namespace XFILE
                                    MUSIC_INFO::CMusicInfoTag& musictag);
       AVIOContext* m_ioctx = nullptr;
       AVFormatContext* m_fctx = nullptr;
+      CFile m_file;
   };
 }
