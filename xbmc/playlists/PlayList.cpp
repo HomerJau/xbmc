@@ -476,11 +476,7 @@ bool CPlayList::Expand(int position)
   {
     (*playlist)[i]->SetDynPath((*playlist)[i]->GetPath());
     (*playlist)[i]->SetPath(item->GetDynPath());
-    // Only propagate parent's start offset if the loaded item doesn't already
-    // have its own (e.g. a CUE sheet offset loaded from the playlist file).
-    if (!(*playlist)[i]->HasProperty("item_start"))
-      (*playlist)[i]->SetStartOffset(item->GetStartOffset());
-    if (!(*playlist)[i]->HasProperty("BasePath"))
+    (*playlist)[i]->SetStartOffset(item->GetStartOffset());
   }
 
   if (playlist->size() <= 0)
