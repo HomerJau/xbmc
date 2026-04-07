@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "File.h"
 #include "IFileDirectory.h"
 #include "music/tags/MusicInfoTag.h"
 #include <memory>
