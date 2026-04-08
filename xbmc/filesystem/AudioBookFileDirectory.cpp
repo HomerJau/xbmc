@@ -64,7 +64,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   std::string desc;
 
   std::vector<std::string> separators{" feat. ", " ft. ", " Feat. ", " Ft. ",  ";", ":",
-                                      "|",       "#",     "/",       " with ", "&"};
+                                      "|", "#", "/", " with ", "&"};
   const std::string musicsep =
       CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_musicItemSeparator;
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
