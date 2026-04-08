@@ -8,13 +8,13 @@
 
 #include "MusicInfoTagLoaderMatroska.h"
 
+#include "KodiTagLibStream.h"
 #include "MusicInfoTag.h"
 #include "ServiceBroker.h"
-#include "cores/FFmpeg.h"
 #include "filesystem/File.h"
-#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
+#include "utils/EmbeddedArt.h"
 #include "utils/StringUtils.h"
 #include "utils/log.h"
 #ifdef TARGET_WINDOWS
@@ -40,85 +40,40 @@ using namespace MUSIC_INFO;
 using namespace XFILE;
 using namespace TagLib;
 
-// VFS-backed TagLib IOStream adapter — allows TagLib to read through
-// Kodi's virtual filesystem (supports nfs://, smb://, etc.)
-class KodiTagLibStream : public TagLib::IOStream
+/*!
+ * \brief Read embedded cover art from a Matroska file's attachments via TagLib.
+ *
+ * Matroska stores cover art as attached files. This searches for the first
+ * attachment with a supported image MIME type (image/jpeg, image/png, image/bmp).
+ *
+ * \param matroskaFile  An open, valid TagLib Matroska::File.
+ * \param tag           CMusicInfoTag to set cover art info on.
+ * \param art           Optional EmbeddedArt to receive the actual image data.
+ */
+static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
+                                     CMusicInfoTag& tag,
+                                     EmbeddedArt* art = nullptr)
 {
-public:
-  KodiTagLibStream(const std::string& fileName) : m_fileName(fileName) {}
-  ~KodiTagLibStream() override { m_file.Close(); }
+  TagLib::Matroska::Attachments* attachments = matroskaFile.attachments();
+  if (!attachments)
+    return;
 
-  TagLib::FileName name() const override { return m_fileName.c_str(); }
-
-  bool isOpen() const override { return m_open; }
-
-  bool open()
+  const auto& attachedFiles = attachments->attachedFileList();
+  for (const auto& file : attachedFiles)
   {
-    m_open = m_file.Open(m_fileName);
-    return m_open;
+    std::string mimeType = file.mimeType().toCString(true);
+    if (mimeType == "image/jpeg" || mimeType == "image/png" || mimeType == "image/bmp")
+    {
+      TagLib::ByteVector data = file.data();
+      if (data.isEmpty())
+        continue;
+
+      tag.SetCoverArtInfo(data.size(), mimeType);
+      if (art)
+        art->Set(reinterpret_cast<const uint8_t*>(data.data()), data.size(), mimeType, "thumb");
+      break; // just need one cover
+    }
   }
-
-  TagLib::ByteVector readBlock(size_t length) override
-  {
-    TagLib::ByteVector bv(static_cast<unsigned int>(length), 0);
-    ssize_t read = m_file.Read(bv.data(), length);
-    if (read > 0)
-      bv.resize(static_cast<unsigned int>(read));
-    else
-      bv.clear();
-    return bv;
-  }
-
-  void writeBlock(const TagLib::ByteVector&) override {}
-  void insert(const TagLib::ByteVector&, TagLib::offset_t, size_t) override {}
-  void removeBlock(TagLib::offset_t, size_t) override {}
-  bool readOnly() const override { return true; }
-
-  void seek(TagLib::offset_t offset, TagLib::IOStream::Position p) override
-  {
-    int whence = SEEK_SET;
-    if (p == TagLib::IOStream::Current)
-      whence = SEEK_CUR;
-    else if (p == TagLib::IOStream::End)
-      whence = SEEK_END;
-    m_file.Seek(offset, whence);
-  }
-
-  TagLib::offset_t tell() const override
-  {
-    return m_file.GetPosition();
-  }
-
-  TagLib::offset_t length() override
-  {
-    return m_file.GetLength();
-  }
-
-  void truncate(TagLib::offset_t) override {}
-  void clear() override {}
-
-  // Expose the underlying CFile for use by FFmpeg's AVIOContext
-  XFILE::CFile& file() { return m_file; }
-
-private:
-  std::string m_fileName;
-  XFILE::CFile m_file;
-  bool m_open = false;
-};
-
-static int vfs_file_read(void* h, uint8_t* buf, int size)
-{
-  CFile* pFile = static_cast<CFile*>(h);
-  return pFile->Read(buf, size);
-}
-
-static int64_t vfs_file_seek(void* h, int64_t pos, int whence)
-{
-  CFile* pFile = static_cast<CFile*>(h);
-  if (whence == AVSEEK_SIZE)
-    return pFile->GetLength();
-  else
-    return pFile->Seek(pos, whence & ~AVSEEK_FORCE);
 }
 
 // Used by Matroka files with no chapters (most comon) or with a single (one song)
@@ -128,38 +83,9 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
 {
   tag.SetLoaded(false);
 
-  // Open once via KodiTagLibStream — reuse for both FFmpeg and TagLib
   KodiTagLibStream matroskaStream(strFileName);
   if (!matroskaStream.open())
     return false;
-
-  CFile& file = matroskaStream.file();
-
-  int bufferSize = 4096;
-  int blockSize = file.GetChunkSize();
-  if (blockSize > 1)
-    bufferSize = blockSize;
-  uint8_t* buffer = (uint8_t*)av_malloc(bufferSize);
-  AVIOContext* ioctx =
-      avio_alloc_context(buffer, bufferSize, 0, &file, vfs_file_read, NULL, vfs_file_seek);
-
-  AVFormatContext* fctx = avformat_alloc_context();
-  fctx->pb = ioctx;
-
-  if (file.IoControl(IOCTRL_SEEK_POSSIBLE, NULL) != 1)
-    ioctx->seekable = 0;
-
-  const AVInputFormat* iformat = nullptr;
-  av_probe_input_buffer(ioctx, &iformat, strFileName.c_str(), NULL, 0, 0);
-
-  if (avformat_open_input(&fctx, strFileName.c_str(), iformat, NULL) < 0)
-  {
-    if (fctx)
-      avformat_close_input(&fctx);
-    av_free(ioctx->buffer);
-    av_free(ioctx);
-    return false;
-  }
 
   std::vector<std::string> separators{";", " feat. ", " ft. ", " Feat. ", " Ft. ", ":",
                                       "|", "#", "/", " with ", "&"};
@@ -168,21 +94,24 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
     separators.push_back(musicsep);
 
-  tag.SetDuration(fctx->duration * av_q2d(av_get_time_base_q()));
-    // Look for any embedded cover art
-  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(fctx, tag, art);
+  // Open via TagLib for duration
+  TagLib::Matroska::File matroskaFile(&matroskaStream, true, TagLib::AudioProperties::Fast);
+  if (!matroskaFile.isValid())
+    return false;
 
-  avformat_close_input(&fctx);
-  av_free(ioctx->buffer);
-  av_free(ioctx);
+  // Get duration from TagLib AudioProperties
+  TagLib::AudioProperties* audioProps = matroskaFile.audioProperties();
+  if (audioProps)
+    tag.SetDuration(audioProps->lengthInSeconds());
 
-  // Rewind the stream so TagLib can read from the beginning
+  // Rewind the stream so GetMatroskaMusicTags can re-open via TagLib
   matroskaStream.seek(0, TagLib::IOStream::Beginning);
 
+  // Get tags, chapters, and embedded cover art in one call
   std::map<std::string, std::string> fileTags;
   std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
   std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
-  GetMatroskaMusicTags(strFileName, matroskaStream, fileTags, chapterTags, chapterOrder);
+  GetMatroskaMusicTags(strFileName, matroskaStream, fileTags, chapterTags, chapterOrder, &tag, art);
 
   if (fileTags.empty())
     return true;
@@ -394,7 +323,8 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     const std::string& fileName,
     std::map<std::string, std::string>& fileTags,
     std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
-    std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder)
+    std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder,
+    CMusicInfoTag* coverTag)
 {
   KodiTagLibStream matroskaStream(fileName);
   if (!matroskaStream.open())
@@ -404,19 +334,22 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     chapterOrder.clear();
     return;
   }
-  GetMatroskaMusicTags(fileName, matroskaStream, fileTags, chapterTags, chapterOrder);
+  GetMatroskaMusicTags(fileName, matroskaStream, fileTags, chapterTags, chapterOrder, coverTag);
 }
 
 /*!
  * use TagLib to read hierarchy of tags in file and populate album and chapter
- * (track) tags. This creates a map of chapterUid to track tags for each chapter
+ * (track) tags. This creates a map of chapterUid to track tags for each chapter.
+ * If coverTag is non-null, embedded cover art from Matroska attachments is set on it.
 */
 void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     const std::string& fileName,
     KodiTagLibStream& matroskaStream,
     std::map<std::string, std::string>& fileTags,
     std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
-    std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder)
+    std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder,
+    CMusicInfoTag* coverTag,
+    EmbeddedArt* art)
 {
   fileTags.clear();
   chapterTags.clear();
@@ -436,6 +369,10 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
       delete matroskaFile;
       return;
     }
+
+    // Read embedded cover art from attachments if requested
+    if (coverTag)
+      GetMatroskaEmbeddedCover(*matroskaFile, *coverTag, art);
 
     /*!
     * First get all chapters and get the chapter name for each chapter and store

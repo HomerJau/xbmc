@@ -13,12 +13,18 @@
 #include "Util.h"
 #include "cores/FFmpeg.h"
 #include "guilib/LocalizeStrings.h"
-#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
+#include "music/tags/KodiTagLibStream.h"
 #include "music/tags/MusicInfoTagLoaderMatroska.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
 #include "utils/log.h"
 #include "utils/StringUtils.h"
+
+#include <taglib/mp4file.h>
+#include <taglib/mp4tag.h>
+#include <taglib/tpropertymap.h>
+#include <taglib/tvariant.h>
+
 #include <map>
 #include <tuple>
 #include <vector>
@@ -40,6 +46,133 @@ static int64_t cfile_file_seek(void *h, int64_t pos, int whence)
     return pFile->GetLength();
   else
     return pFile->Seek(pos, whence & ~AVSEEK_FORCE);
+}
+
+/*!
+ * \brief Chapter data extracted from an MP4/M4B file via TagLib.
+ */
+struct Mp4Chapter
+{
+  std::string title;
+  double startSecs{0.0};
+  double endSecs{0.0};
+};
+
+/*!
+ * \brief Embedded cover art info extracted from an MP4/M4B file via TagLib.
+ */
+struct Mp4CoverArt
+{
+  bool found{false};
+  size_t size{0};
+  std::string mimeType;
+};
+
+/*!
+ * \brief Read M4B chapters and embedded cover art using TagLib.
+ *
+ * Chapters are read via complexProperties("CHAPTER"), each entry having:
+ *   "TITLE"      — chapter title (String)
+ *   "START_TIME" — start time in milliseconds (LongLong)
+ *   "END_TIME"   — end time in milliseconds (LongLong)
+ *
+ * Cover art is read via complexProperties("PICTURE"), each entry having:
+ *   "data"       — image data (ByteVector)
+ *   "mimeType"   — MIME type string (String)
+ *
+ * \param fileName  Path to the M4B file (VFS-safe).
+ * \param[out] chapters  Vector of {title, startSecs, endSecs} tuples.
+ * \param[out] coverArt  Embedded cover art info (size + MIME type).
+ * \return true if the file was opened and parsed successfully.
+ */
+static bool ReadMp4TagLib(const std::string& fileName,
+                          std::vector<Mp4Chapter>& chapters,
+                          Mp4CoverArt& coverArt)
+{
+  chapters.clear();
+  coverArt = {};
+
+  KodiTagLibStream stream(fileName);
+  if (!stream.open())
+    return false;
+
+  TagLib::MP4::File mp4File(&stream);
+  if (!mp4File.isValid())
+    return false;
+
+  TagLib::MP4::Tag* mp4tag = mp4File.tag();
+  if (!mp4tag)
+    return false;
+
+  // --- Read chapters ---
+  auto chapterList = mp4tag->complexProperties("CHAPTER");
+  if (!chapterList.isEmpty())
+  {
+    for (const auto& chapterMap : chapterList)
+    {
+      Mp4Chapter ch;
+
+      auto titleIt = chapterMap.find("TITLE");
+      if (titleIt != chapterMap.end())
+        ch.title = titleIt->second.toString().toCString(true);
+
+      auto startIt = chapterMap.find("START_TIME");
+      if (startIt != chapterMap.end())
+        ch.startSecs = static_cast<double>(startIt->second.toLongLong()) / 1000.0;
+
+      auto endIt = chapterMap.find("END_TIME");
+      if (endIt != chapterMap.end())
+        ch.endSecs = static_cast<double>(endIt->second.toLongLong()) / 1000.0;
+
+      chapters.push_back(ch);
+    }
+
+    // If TagLib didn't provide end times, compute them from the next chapter's start
+    for (size_t i = 0; i + 1 < chapters.size(); ++i)
+    {
+      if (chapters[i].endSecs <= 0.0)
+        chapters[i].endSecs = chapters[i + 1].startSecs;
+    }
+
+    CLog::Log(LOGDEBUG, "ReadMp4TagLib: found {} chapters via TagLib for {}", chapters.size(),
+               fileName);
+  }
+  else
+  {
+    CLog::Log(LOGDEBUG, "ReadMp4TagLib: no chapters found via TagLib for {}", fileName);
+  }
+
+  // --- Read embedded cover art ---
+  auto pictureList = mp4tag->complexProperties("PICTURE");
+  if (!pictureList.isEmpty())
+  {
+    const auto& pictureMap = pictureList.front();
+
+    auto dataIt = pictureMap.find("data");
+    auto mimeIt = pictureMap.find("mimeType");
+
+    if (dataIt != pictureMap.end())
+    {
+      coverArt.size = dataIt->second.toByteVector().size();
+
+      if (mimeIt != pictureMap.end())
+        coverArt.mimeType = mimeIt->second.toString().toCString(true);
+      else
+      {
+        // Fallback: infer MIME type from the data if not provided
+        coverArt.mimeType = "image/jpeg";
+      }
+
+      if (coverArt.size > 0)
+      {
+        coverArt.found = true;
+        CLog::Log(LOGDEBUG, "ReadMp4TagLib: found embedded cover art ({} bytes, {}) for {}",
+                   coverArt.size, coverArt.mimeType, fileName);
+      }
+    }
+  }
+
+  return true;
 }
 
 CAudioBookFileDirectory::~CAudioBookFileDirectory(void)
@@ -70,12 +203,25 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
     separators.push_back(musicsep); // add custom music separator from as.xml
 
-  // FIX: Guard streams[0] access — crash if file has no streams
-  const int end_time_m4b_file = (m_fctx->nb_streams > 0) ? m_fctx->streams[0]->duration *
-                                                               av_q2d(m_fctx->streams[0]->time_base)
-                                                         : 0;
-
   const bool isAudioBook = url.IsFileType("m4b");
+
+  // For M4B files, read chapters and cover art via TagLib (no FFmpeg needed)
+  std::vector<Mp4Chapter> mp4Chapters;
+  Mp4CoverArt mp4CoverArt;
+  if (isAudioBook)
+  {
+    ReadMp4TagLib(url.Get(), mp4Chapters, mp4CoverArt);
+
+    // Set the last chapter's end time from the FFmpeg stream duration if needed
+    if (!mp4Chapters.empty() && mp4Chapters.back().endSecs <= 0.0)
+    {
+      double endTimeSecs = 0.0;
+      if (m_fctx->nb_streams > 0)
+        endTimeSecs = m_fctx->streams[0]->duration * av_q2d(m_fctx->streams[0]->time_base);
+      mp4Chapters.back().endSecs = endTimeSecs;
+    }
+  }
+
   // Some tags are relevant to the whole album - these are read first
   CMusicInfoTag albumtag;
 
@@ -100,8 +246,9 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
   if (!isAudioBook)
   {
+    // Pass &albumtag so GetMatroskaMusicTags reads embedded cover art too
     CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags,
-                                                      chapterOrder);
+                                                      chapterOrder, &albumtag);
     if (fileTags.empty())
       return true;
     /*!
@@ -112,12 +259,19 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
       CMusicInfoTagLoaderMatroska::ParseTag(t.first, t.second, separators, musicsep, albumtag);
   }
 
+  // Determine chapter count — from TagLib for both M4B and Matroska
+  const unsigned int chapterCount =
+      isAudioBook ? static_cast<unsigned int>(mp4Chapters.size())
+                  : static_cast<unsigned int>(chapterOrder.size());
+
   std::string thumb;
-  if (m_fctx->nb_chapters > 1)
+  if (chapterCount > 1)
     thumb = CTextureUtils::GetWrappedImageURL(url.Get(), "music");
 
-  // Look for any embedded cover art
-  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(m_fctx, albumtag);
+  // Embedded cover art — TagLib for M4B (already read above),
+  // TagLib for Matroska (read inside GetMatroskaMusicTags above)
+  if (isAudioBook && mp4CoverArt.found)
+    albumtag.SetCoverArtInfo(mp4CoverArt.size, mp4CoverArt.mimeType);
 
   // now get the AudioCodec etc
   AVStream* st = nullptr;
@@ -195,16 +349,34 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   }
 
   bool chapter_error = false;
-  for (unsigned int i = 0; i < m_fctx->nb_chapters; ++i)
+  for (unsigned int i = 0; i < chapterCount; ++i)
   {
-    if (m_fctx->chapters[i]->start < 0) // negative start time, ignore it
-      continue;
+    double chapterStartSecs;
+    double chapterEndSecs;
+    std::string chaptitle = StringUtils::Format(g_localizeStrings.Get(25010), i + 1);
+
+    if (isAudioBook)
+    {
+      // Chapter data comes from TagLib (MP4)
+      chapterStartSecs = mp4Chapters[i].startSecs;
+      chapterEndSecs = mp4Chapters[i].endSecs;
+
+      if (!mp4Chapters[i].title.empty())
+        chaptitle = mp4Chapters[i].title;
+    }
+    else
+    {
+      // Chapter data comes from TagLib (Matroska) via chapterOrder
+      chapterStartSecs = std::get<2>(chapterOrder[i]);
+      chapterEndSecs = std::get<3>(chapterOrder[i]);
+
+      if (!std::get<1>(chapterOrder[i]).empty())
+        chaptitle = std::get<1>(chapterOrder[i]);
+    }
 
     // FIX: Check chapter duration (end - start), not just end time.
     // A tiny chapter at the 2-hour mark would have a large end time and pass
     // the old filter. Checking duration catches it correctly.
-    double chapterStartSecs = m_fctx->chapters[i]->start * av_q2d(m_fctx->chapters[i]->time_base);
-    double chapterEndSecs = m_fctx->chapters[i]->end * av_q2d(m_fctx->chapters[i]->time_base);
     double chapterDuration = chapterEndSecs - chapterStartSecs;
     if (chapterDuration > 0 && chapterDuration < 1.0)
     {
@@ -216,48 +388,34 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
       continue;
     }
 
-    tag = nullptr;
-    std::string chaptitle = StringUtils::Format(g_localizeStrings.Get(25010), i + 1);
-    std::string chapauthor;
-    std::string chapalbum;
-
     std::shared_ptr<CFileItem> item(new CFileItem(url.Get(), false));
     *item->GetMusicInfoTag() = albumtag;
 
     if (isAudioBook)
     {
-      while ((tag = av_dict_get(m_fctx->chapters[i]->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
-      {
-        if (StringUtils::CompareNoCase(tag->key, "title") == 0)
-          chaptitle = tag->value;
-        else if (StringUtils::CompareNoCase(tag->key, "artist") == 0)
-          chapauthor = tag->value;
-        else if (StringUtils::CompareNoCase(tag->key, "album") == 0)
-          chapalbum = tag->value;
-      }
       item->GetMusicInfoTag()->SetTitle(chaptitle);
-      item->GetMusicInfoTag()->SetAlbum(chapalbum.empty() ? album.empty() ? title : album
-                                                          : chapalbum);
-      item->GetMusicInfoTag()->SetArtist(chapauthor.empty() ? author : chapauthor);
+      item->GetMusicInfoTag()->SetAlbum(album.empty() ? title : album);
+      item->GetMusicInfoTag()->SetArtist(author);
       if (!desc.empty())
         item->GetMusicInfoTag()->SetComment(desc);
 
-      // FIX: Restore start/end offsets and duration for m4b chapters.
-      // This was lost when the old shared offset code was commented out.
       item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(chapterStartSecs));
       int64_t endOffset;
-      if (m_fctx->chapters[i]->end > 0)
+      if (chapterEndSecs > 0.0)
       {
         endOffset = CUtil::ConvertSecsToMilliSecs(chapterEndSecs);
       }
-      else if (i + 1 < m_fctx->nb_chapters)
+      else if (i + 1 < mp4Chapters.size())
       {
-        endOffset = CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i + 1]->start *
-                                                  av_q2d(m_fctx->chapters[i + 1]->time_base));
+        endOffset = CUtil::ConvertSecsToMilliSecs(mp4Chapters[i + 1].startSecs);
       }
       else
       {
-        endOffset = CUtil::ConvertSecsToMilliSecs(end_time_m4b_file);
+        // Fallback: use stream duration from FFmpeg
+        double endTimeSecs = 0.0;
+        if (m_fctx->nb_streams > 0)
+          endTimeSecs = m_fctx->streams[0]->duration * av_q2d(m_fctx->streams[0]->time_base);
+        endOffset = CUtil::ConvertSecsToMilliSecs(endTimeSecs);
       }
       item->SetEndOffset(endOffset);
       item->GetMusicInfoTag()->SetDuration(
@@ -274,13 +432,13 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
           for (const auto& Tracktag : it->second)
             CMusicInfoTagLoaderMatroska::ParseTag(Tracktag.first, Tracktag.second, separators,
                                                   musicsep, *item->GetMusicInfoTag());
-
-          item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(std::get<2>(chapterOrder[i])));
-          item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(std::get<3>(chapterOrder[i])));
-          item->GetMusicInfoTag()->SetDuration(
-              CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
         }
       }
+
+      item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(chapterStartSecs));
+      item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(chapterEndSecs));
+      item->GetMusicInfoTag()->SetDuration(
+          CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
     }
 
     item->GetMusicInfoTag()->SetTrackNumber(i + 1);
@@ -339,7 +497,23 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
   if (err < 0)
     CLog::Log(LOGERROR, "Can't detect codec info in file {}", url.GetRedacted());
 
-  contains = m_fctx->nb_chapters > 1;
+  // Check chapter count using TagLib for both M4B and Matroska
+  if (url.IsFileType("m4b"))
+  {
+    std::vector<Mp4Chapter> chapters;
+    Mp4CoverArt coverArt;
+    contains = ReadMp4TagLib(url.Get(), chapters, coverArt) && chapters.size() > 1;
+  }
+  else
+  {
+    // Matroska: use TagLib via GetMatroskaMusicTags to get chapter count
+    std::map<std::string, std::string> fileTags;
+    std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
+    std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
+    CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags,
+                                                      chapterOrder);
+    contains = chapterOrder.size() > 1;
+  }
 
   return contains;
 }
