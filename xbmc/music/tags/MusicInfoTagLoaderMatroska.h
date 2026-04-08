@@ -15,6 +15,9 @@
 #include <tuple>
 #include <vector>
 
+// Forward declaration — defined in MusicInfoTagLoaderMatroska.cpp
+class KodiTagLibStream;
+
 namespace MUSIC_INFO
 {
 class CMusicInfoTagLoaderMatroska : public IMusicInfoTagLoader
@@ -33,6 +36,8 @@ public:
                        const std::string& musicsep,
                        CMusicInfoTag& tag);
 
+  // Static overload for external callers (e.g. AudioBookFileDirectory) —
+  // opens its own KodiTagLibStream internally
   static void GetMatroskaMusicTags(
       const std::string& fileName,
       std::map<std::string, std::string>& fileTags,
@@ -40,6 +45,14 @@ public:
       std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder);
 
 private:
+  // Internal overload used by Load() — reuses an already-open stream
+  static void GetMatroskaMusicTags(
+      const std::string& fileName,
+      KodiTagLibStream& matroskaStream,
+      std::map<std::string, std::string>& fileTags,
+      std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
+      std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder);
+
   static void AddRole(const std::vector<std::string>& data,
                       const std::vector<std::string>& separators,
                       CMusicInfoTag& musictag);

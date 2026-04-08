@@ -97,6 +97,9 @@ public:
   void truncate(TagLib::offset_t) override {}
   void clear() override {}
 
+  // Expose the underlying CFile for use by FFmpeg's AVIOContext
+  XFILE::CFile& file() { return m_file; }
+
 private:
   std::string m_fileName;
   XFILE::CFile m_file;
@@ -125,9 +128,12 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
 {
   tag.SetLoaded(false);
 
-  CFile file;
-  if (!file.Open(strFileName))
+  // Open once via KodiTagLibStream — reuse for both FFmpeg and TagLib
+  KodiTagLibStream matroskaStream(strFileName);
+  if (!matroskaStream.open())
     return false;
+
+  CFile& file = matroskaStream.file();
 
   int bufferSize = 4096;
   int blockSize = file.GetChunkSize();
@@ -156,7 +162,7 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   }
 
   std::vector<std::string> separators{";", " feat. ", " ft. ", " Feat. ", " Ft. ", ":",
-                                      "|", "#",       "/",     " with ",  "&"};
+                                      "|", "#", "/", " with ", "&"};
   std::string musicsep = 
       CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_musicItemSeparator;
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
@@ -170,10 +176,13 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   av_free(ioctx->buffer);
   av_free(ioctx);
 
+  // Rewind the stream so TagLib can read from the beginning
+  matroskaStream.seek(0, TagLib::IOStream::Beginning);
+
   std::map<std::string, std::string> fileTags;
   std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
   std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
-  GetMatroskaMusicTags(strFileName, fileTags, chapterTags, chapterOrder);
+  GetMatroskaMusicTags(strFileName, matroskaStream, fileTags, chapterTags, chapterOrder);
 
   if (fileTags.empty())
     return true;
@@ -378,11 +387,33 @@ void CMusicInfoTagLoaderMatroska::AddCommaDelimitedString(
 }
 
 /*!
+ * Static overload for external callers (e.g. AudioBookFileDirectory).
+ * Opens its own KodiTagLibStream and delegates to the shared-stream overload.
+*/
+void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
+    const std::string& fileName,
+    std::map<std::string, std::string>& fileTags,
+    std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
+    std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder)
+{
+  KodiTagLibStream matroskaStream(fileName);
+  if (!matroskaStream.open())
+  {
+    fileTags.clear();
+    chapterTags.clear();
+    chapterOrder.clear();
+    return;
+  }
+  GetMatroskaMusicTags(fileName, matroskaStream, fileTags, chapterTags, chapterOrder);
+}
+
+/*!
  * use TagLib to read hierarchy of tags in file and populate album and chapter
  * (track) tags. This creates a map of chapterUid to track tags for each chapter
 */
 void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     const std::string& fileName,
+    KodiTagLibStream& matroskaStream,
     std::map<std::string, std::string>& fileTags,
     std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
     std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder)
@@ -392,25 +423,17 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
   chapterOrder.clear();
 
   TagLib::Matroska::File* matroskaFile = nullptr;
-  KodiTagLibStream* matroskaStream = nullptr;
   Matroska::Tag* matroskatag = nullptr;
 
   try
   {
-    matroskaStream = new KodiTagLibStream(fileName);
-    if (!matroskaStream->open())
-    {
-      delete matroskaStream;
-      return;
-    }
-
-    matroskaFile = new TagLib::Matroska::File(matroskaStream, true, TagLib::AudioProperties::Fast);
+    matroskaFile =
+        new TagLib::Matroska::File(&matroskaStream, true, TagLib::AudioProperties::Fast);
     if (matroskaFile->isValid())
       matroskatag = matroskaFile->tag(true);
     if (!matroskatag)
     {
       delete matroskaFile;
-      delete matroskaStream;
       return;
     }
 
@@ -664,16 +687,13 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
       }
     }
 
-    // FIX: Proper cleanup with braces — delete both objects unconditionally
-    // (delete on nullptr is safe in C++)
+    // Cleanup — stream is owned by caller, only delete the TagLib file object
     delete matroskaFile;
-    delete matroskaStream;
   }
   catch (const std::exception& e)
   {
     CLog::Log(LOGERROR, "GetMatroskaMusicTags: Exception while reading Matroska tags: {} {}",
               fileName, e.what());
     delete matroskaFile;
-    delete matroskaStream;
   }
 }
