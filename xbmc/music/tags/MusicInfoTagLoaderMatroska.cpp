@@ -491,7 +491,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
               std::end(MULTIPLE_VALUE_TAGS))
           {
             std::string currentValue = fileTags[TagName];
-            fileTags[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
+            fileTags[TagName] = currentValue + " / " + tag.toString().to8Bit(true);
           }
         }
       }
@@ -527,7 +527,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                           TagName) != std::end(MULTIPLE_VALUE_TAGS))
             {
               std::string currentValue = fileTags[TagName];
-              fileTags[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
+              fileTags[TagName] = currentValue + " / " + tag.toString().to8Bit(true);
             }
           }
         }
@@ -554,7 +554,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
               {
                 std::string newValue = tag.toString().to8Bit(true);
                 if (it->second.find(newValue) == std::string::npos)
-                  it->second = it->second + ";" + newValue;
+                  it->second = it->second + " / " + newValue;
               }
             }
           }
@@ -576,7 +576,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                             TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
                 std::string currentValue = it->second;
-                it->second = currentValue + ";" + tag.toString().to8Bit(true);
+                it->second = currentValue + " / " + tag.toString().to8Bit(true);
               }
             }
           }
@@ -594,7 +594,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                             TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
                 std::string currentValue = fileTags[TagName];
-                fileTags[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
+                fileTags[TagName] = currentValue + " / " + tag.toString().to8Bit(true);
               }
             }
           }
@@ -614,7 +614,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                           TagName) != std::end(MULTIPLE_VALUE_TAGS))
             {
               std::string currentValue = fileTags[TagName];
-              fileTags[TagName] = currentValue + ";" + tag.toString().to8Bit(true);
+              fileTags[TagName] = currentValue + " / " + tag.toString().to8Bit(true);
             }
           }
         }
