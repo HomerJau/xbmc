@@ -52,7 +52,9 @@ using namespace TagLib;
  */
 static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
                                      CMusicInfoTag& tag,
-                                     EmbeddedArt* art = nullptr)
+                                     EmbeddedArt* art = nullptr) static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
+                                                      CMusicInfoTag& tag,
+                                                      EmbeddedArt* art = nullptr)
 {
   TagLib::Matroska::Attachments* attachments = matroskaFile.attachments();
   if (!attachments)
@@ -64,7 +66,7 @@ static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
     std::string mimeType = file.mediaType().toCString(true);
     if (mimeType == "image/jpeg" || mimeType == "image/png" || mimeType == "image/bmp")
     {
-      TagLib::ByteVector data = file.data();
+      const TagLib::ByteVector& data = file.data();
       if (data.isEmpty())
         continue;
 
@@ -94,20 +96,8 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
     separators.push_back(musicsep);
 
-  // Open via TagLib for duration
-  TagLib::Matroska::File matroskaFile(&matroskaStream, true, TagLib::AudioProperties::Fast);
-  if (!matroskaFile.isValid())
-    return false;
-
-  // Get duration from TagLib AudioProperties
-  TagLib::AudioProperties* audioProps = matroskaFile.audioProperties();
-  if (audioProps)
-    tag.SetDuration(audioProps->lengthInSeconds());
-
-  // Rewind the stream so GetMatroskaMusicTags can re-open via TagLib
-  matroskaStream.seek(0, TagLib::IOStream::Beginning);
-
-  // Get tags, chapters, and embedded cover art in one call
+  // Get tags, chapters, embedded cover art, and duration in one call
+  // (single file parse — avoids opening the Matroska file twice)
   std::map<std::string, std::string> fileTags;
   std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
   std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
@@ -368,6 +358,15 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     {
       delete matroskaFile;
       return;
+    }
+
+    // Get duration from TagLib AudioProperties if a coverTag is provided
+    // (indicates this is called from Load(), not just for chapter enumeration)
+    if (coverTag)
+    {
+      TagLib::AudioProperties* audioProps = matroskaFile->audioProperties();
+      if (audioProps)
+        coverTag->SetDuration(audioProps->lengthInSeconds());
     }
 
     // Read embedded cover art from attachments if requested
