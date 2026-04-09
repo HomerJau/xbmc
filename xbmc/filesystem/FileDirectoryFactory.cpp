@@ -261,5 +261,20 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
               pItem->HasMusicInfoTag(),
               pItem->HasMusicInfoTag() ? pItem->GetMusicInfoTag()->Loaded() : false,
               url.GetRedacted());
+    VECSOURCES* musicSources = CMediaSourceSettings::GetInstance().GetSources("music");
+    bool isSource;
+    int sourceIndex = CUtil::GetMatchingSource(pItem->GetPath(), *musicSources, isSource);
+    if (sourceIndex >= 0 && sourceIndex < static_cast<int>(musicSources->size()))
+    {
+      if (!pItem->HasMusicInfoTag() || !pItem->GetMusicInfoTag()->Loaded())
+      {
+        std::unique_ptr<CAudioBookFileDirectory> pDir(new CAudioBookFileDirectory);
+        if (pDir->ContainsFiles(url))
+          return pDir.release();
+      }
+    }
+    return NULL;
   }
+  return NULL;
+}
 
