@@ -96,6 +96,8 @@ void CApplicationPlayerCallback::OnPlayerCloseFile(const CFileItem& file,
 {
   auto& components = CServiceBroker::GetAppComponents();
   const auto stackHelper = components.GetComponent<CApplicationStackHelper>();
+  const std::shared_ptr<CAdvancedSettings> advancedSettings =
+      CServiceBroker::GetSettingsComponent()->GetAdvancedSettings();
 
   std::unique_lock<CCriticalSection> lock(stackHelper->m_critSection);
 
@@ -109,22 +111,22 @@ void CApplicationPlayerCallback::OnPlayerCloseFile(const CFileItem& file,
   if (bookmark.timeInSeconds == 0.0)
     return;
 
-  if (stackHelper->GetRegisteredStack(fileItem) != nullptr &&
-      stackHelper->GetRegisteredStackTotalTimeMs(fileItem) > 0)
+  if (fileItem.IsVideo())
   {
-    // regular stack case: we have to save the bookmark on the stack
-    fileItem = *stackHelper->GetRegisteredStack(file);
-    // the bookmark coming from the player is only relative to the current part, thus needs to be corrected with these attributes (start time will be 0 for non-stackparts)
-    bookmark.timeInSeconds += stackHelper->GetRegisteredStackPartStartTimeMs(file) / 1000.0;
-    if (stackHelper->GetRegisteredStackTotalTimeMs(file) > 0)
-      bookmark.totalTimeInSeconds = stackHelper->GetRegisteredStackTotalTimeMs(file) / 1000.0;
-    bookmark.partNumber = stackHelper->GetRegisteredStackPartNumber(file);
+    if (stackHelper->GetRegisteredStack(fileItem) != nullptr &&
+        stackHelper->GetRegisteredStackTotalTimeMs(fileItem) > 0)
+    {
+      // regular stack case: we have to save the bookmark on the stack
+      fileItem = *stackHelper->GetRegisteredStack(file);
+      // the bookmark coming from the player is only relative to the current part, thus needs to be corrected with these attributes (start time will be 0 for non-stackparts)
+      bookmark.timeInSeconds += stackHelper->GetRegisteredStackPartStartTimeMs(file) / 1000.0;
+      if (stackHelper->GetRegisteredStackTotalTimeMs(file) > 0)
+        bookmark.totalTimeInSeconds = stackHelper->GetRegisteredStackTotalTimeMs(file) / 1000.0;
+      bookmark.partNumber = stackHelper->GetRegisteredStackPartNumber(file);
+    }
   }
 
   percent = bookmark.timeInSeconds / bookmark.totalTimeInSeconds * 100;
-
-  const std::shared_ptr<CAdvancedSettings> advancedSettings =
-      CServiceBroker::GetSettingsComponent()->GetAdvancedSettings();
 
   if ((fileItem.IsAudio() && advancedSettings->m_audioPlayCountMinimumPercent > 0 &&
        percent >= advancedSettings->m_audioPlayCountMinimumPercent) ||
@@ -134,26 +136,47 @@ void CApplicationPlayerCallback::OnPlayerCloseFile(const CFileItem& file,
     playCountUpdate = true;
   }
 
-  if (advancedSettings->m_videoIgnorePercentAtEnd > 0 &&
-      bookmark.totalTimeInSeconds - bookmark.timeInSeconds <
-          0.01 * static_cast<double>(advancedSettings->m_videoIgnorePercentAtEnd) *
-              bookmark.totalTimeInSeconds)
+  if (fileItem.IsVideo())
   {
-    resumeBookmark.timeInSeconds = -1.0;
-  }
-  else if (bookmark.timeInSeconds > advancedSettings->m_videoIgnoreSecondsAtStart)
-  {
-    resumeBookmark = bookmark;
-    if (stackHelper->GetRegisteredStack(file) != nullptr)
+    if (advancedSettings->m_videoIgnorePercentAtEnd > 0 &&
+        bookmark.totalTimeInSeconds - bookmark.timeInSeconds <
+            0.01 * static_cast<double>(advancedSettings->m_videoIgnorePercentAtEnd) *
+                bookmark.totalTimeInSeconds)
     {
-      // also update video info tag with total time
-      fileItem.GetVideoInfoTag()->m_streamDetails.SetVideoDuration(
-          0, resumeBookmark.totalTimeInSeconds);
+      resumeBookmark.timeInSeconds = -1.0; // Finished (bookmark cleared)
+    }
+    else if (bookmark.timeInSeconds > advancedSettings->m_videoIgnoreSecondsAtStart)
+    {
+      resumeBookmark = bookmark;
+      if (stackHelper->GetRegisteredStack(file) != nullptr)
+      {
+        // also update video info tag with total time
+        fileItem.GetVideoInfoTag()->m_streamDetails.SetVideoDuration(
+            0, resumeBookmark.totalTimeInSeconds);
+      }
+    }
+    else
+    {
+      resumeBookmark.timeInSeconds = 0.0; // Not played enough to bookmark (bookmark cleared)
     }
   }
-  else
+  else if (fileItem.IsAudio())
   {
-    resumeBookmark.timeInSeconds = 0.0;
+    resumeBookmark = bookmark;
+
+    if (fileItem.GetStartOffset() == 0 &&
+        bookmark.timeInSeconds < advancedSettings->m_videoIgnoreSecondsAtStart)
+    {
+      resumeBookmark.timeInSeconds = 0.0; // Not played enough to bookmark (bookmark cleared)
+    }
+    if (file.GetProperty("last_chapter").asBoolean(false) &&
+        advancedSettings->m_videoIgnorePercentAtEnd > 0 &&
+        bookmark.totalTimeInSeconds - bookmark.timeInSeconds <
+            0.01 * static_cast<double>(advancedSettings->m_videoIgnorePercentAtEnd) *
+                bookmark.totalTimeInSeconds)
+    {
+      resumeBookmark.timeInSeconds = 0.0; // Finished (bookmark cleared)
+    }
   }
 
   if (CServiceBroker::GetSettingsComponent()

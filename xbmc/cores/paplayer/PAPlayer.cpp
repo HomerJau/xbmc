@@ -782,10 +782,10 @@ inline bool PAPlayer::ProcessStream(StreamInfo *si, double &freeBufferTime)
   }
 
   int status = si->m_decoder.GetStatus();
-  if (status == STATUS_ENDED   ||
-      status == STATUS_NO_FILE ||
+  if (status == STATUS_ENDED || status == STATUS_NO_FILE ||
       si->m_decoder.ReadSamples(PACKET_SIZE) == RET_ERROR ||
-      ((si->m_endOffset) && (si->m_framesSent / si->m_audioFormat.m_sampleRate >= (si->m_endOffset - si->m_startOffset) / 1000)))
+      ((si->m_endOffset) && (si->m_framesSent >= (si->m_endOffset - si->m_startOffset) *
+                                                     si->m_audioFormat.m_sampleRate / 1000)))
   {
     if (si == m_currentStream && si->m_nextFileItem)
     {
@@ -1166,6 +1166,11 @@ void PAPlayer::CloseFileCB(StreamInfo &si)
   bookmark.timeInSeconds -= si.m_stream->GetDelay();
   bookmark.player = m_name;
   bookmark.playerState = GetPlayerState();
+
+  // Flag if this is the last chapter (endOffset matches or exceeds total file duration)
+  if (si.m_endOffset == 0 || si.m_decoderTotal - si.m_endOffset < 1000)
+    fileItem.SetProperty("last_chapter", true);
+
   CServiceBroker::GetJobManager()->Submit([=]() { cb->OnPlayerCloseFile(fileItem, bookmark); },
                                           CJob::PRIORITY_NORMAL);
 }
