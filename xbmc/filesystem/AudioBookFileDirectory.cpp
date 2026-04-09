@@ -13,6 +13,7 @@
 #include "Util.h"
 #include "cores/FFmpeg.h"
 #include "guilib/LocalizeStrings.h"
+#include "music/MusicDatabase.h"
 #include "music/tags/KodiTagLibStream.h"
 #include "music/tags/MusicInfoTagLoaderMatroska.h"
 #include "settings/AdvancedSettings.h"
@@ -186,9 +187,54 @@ CAudioBookFileDirectory::~CAudioBookFileDirectory(void)
   }
 }
 
+bool CAudioBookFileDirectory::EnsureFFmpegContext(const CURL& url)
+{
+  if (m_fctx)
+    return true; // already open
+
+  if (!m_file.Open(url))
+    return false;
+
+  uint8_t* buffer = (uint8_t*)av_malloc(32768);
+  m_ioctx = avio_alloc_context(buffer, 32768, 0, &m_file, cfile_file_read, nullptr, cfile_file_seek);
+
+  m_fctx = avformat_alloc_context();
+  m_fctx->pb = m_ioctx;
+  m_fctx->flags |= AVFMT_FLAG_CUSTOM_IO;
+
+  if (m_file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
+    m_ioctx->seekable = 0;
+
+  m_ioctx->max_packet_size = 32768;
+
+  const AVInputFormat* iformat = nullptr;
+  av_probe_input_buffer(m_ioctx, &iformat, url.Get().c_str(), nullptr, 0, 0);
+
+  if (avformat_open_input(&m_fctx, url.Get().c_str(), iformat, nullptr) < 0)
+  {
+    if (m_fctx)
+      avformat_close_input(&m_fctx);
+    av_free(m_ioctx->buffer);
+    av_free(m_ioctx);
+    m_ioctx = nullptr;
+    return false;
+  }
+  m_fctx->flags |= AVFMT_FLAG_NOPARSE;
+  int err = avformat_find_stream_info(m_fctx, NULL);
+  if (err < 0)
+    CLog::Log(LOGERROR, "Can't detect codec info in file {}", url.GetRedacted());
+
+  return true;
+}
+
 bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items)
 {
   if (!m_fctx && !ContainsFiles(url))
+    return true;
+
+  // Ensure FFmpeg context is available for codec info — may not be open
+  // if ContainsFiles() used the DB fast path
+  if (!EnsureFFmpegContext(url))
     return true;
 
   std::string title;
@@ -462,8 +508,47 @@ bool CAudioBookFileDirectory::Exists(const CURL& url)
   return CFile::Exists(url) && ContainsFiles(url);
 }
 
+int CAudioBookFileDirectory::GetSongCountFromDatabase(const CURL& url)
+{
+  CMusicDatabase db;
+  if (!db.Open())
+    return -1;
+
+  std::string strPath = URIUtils::GetDirectory(url.Get());
+  std::string strFileName = URIUtils::GetFileName(url.Get());
+
+  std::string sql = PrepareSQL("SELECT COUNT(*) FROM song "
+                               "JOIN path ON song.idPath = path.idPath "
+                               "WHERE path.strPath = '%s' AND song.strFileName = '%s'",
+                               strPath.c_str(), strFileName.c_str());
+
+  int count = db.GetSingleValueInt(sql);
+  db.Close();
+
+  return (count >= 0) ? count : -1;
+}
+
 bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
 {
+  // Fast path: check the music database first — avoids opening the file entirely
+  // when it has already been scanned into the library
+  int dbSongCount = GetSongCountFromDatabase(url);
+  if (dbSongCount > 1)
+  {
+    CLog::Log(LOGDEBUG, "CAudioBookFileDirectory::ContainsFiles: DB fast path — {} songs for {}",
+              dbSongCount, url.GetRedacted());
+    return true;
+  }
+  else if (dbSongCount == 1)
+  {
+    CLog::Log(LOGDEBUG,
+              "CAudioBookFileDirectory::ContainsFiles: DB fast path — single song for {}",
+              url.GetRedacted());
+    return false;
+  }
+
+  // Slow path: file not in database — open via FFmpeg and check chapter count.
+  // m_fctx is kept open for GetDirectory() to reuse for codec info.
   if (!m_file.Open(url))
     return false;
 
@@ -497,23 +582,7 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
   if (err < 0)
     CLog::Log(LOGERROR, "Can't detect codec info in file {}", url.GetRedacted());
 
-  // Check chapter count using TagLib for both M4B and Matroska
-  if (url.IsFileType("m4b"))
-  {
-    std::vector<Mp4Chapter> chapters;
-    Mp4CoverArt coverArt;
-    contains = ReadMp4TagLib(url.Get(), chapters, coverArt) && chapters.size() > 1;
-  }
-  else
-  {
-    // Matroska: use TagLib via GetMatroskaMusicTags to get chapter count
-    std::map<std::string, std::string> fileTags;
-    std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
-    std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
-    CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags,
-                                                      chapterOrder);
-    contains = chapterOrder.size() > 1;
-  }
+  contains = m_fctx->nb_chapters > 1;
 
   return contains;
 }
