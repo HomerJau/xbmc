@@ -54,7 +54,7 @@ public:
     const int64_t pos = m_file.GetPosition();
 
     // Try to satisfy the read entirely from the buffer
-    if (pos >= m_bufStart && pos + static_cast<int64_t>(length) <= m_bufStart + m_bufFill)
+    if (pos >= m_bufStart && pos + static_cast<int64_t>(length) <= m_bufStart + static_cast<int64_t>(m_bufFill))
     {
       const size_t offset = static_cast<size_t>(pos - m_bufStart);
       TagLib::ByteVector bv(m_buf.data() + offset, static_cast<unsigned int>(length));
