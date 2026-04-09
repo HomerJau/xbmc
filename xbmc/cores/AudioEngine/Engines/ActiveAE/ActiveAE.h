@@ -63,6 +63,8 @@ struct AudioSettings
   double atempoThreshold;
   bool streamNoise;
   int silenceTimeoutMinutes;
+  float mixSubLevel; 
+  bool lowLatencyMode; 
 };
 
 class CActiveAEControlProtocol : public Protocol
@@ -324,6 +326,7 @@ protected:
   void SStopSound(CActiveAESound *sound);
   void DiscardSound(CActiveAESound *sound);
   void ChangeResamplers();
+  void ConfigureLowLatency();
 
   bool RunStages();
   bool HasWork();
@@ -407,5 +410,8 @@ protected:
   float m_aeVolume;
   bool m_aeMuted;
   bool m_aeGUISoundForce;
+
+  float m_targetBufferLevel{0.0f};
+  float m_initialTargetBufferLevel{0.0f};
 };
 };
