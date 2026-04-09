@@ -294,7 +294,7 @@ bool PAPlayer::QueueNextFileEx(const CFileItem &file, bool fadeIn)
     std::string newURL = file.GetDynURL().GetFileName();
     std::string oldURL = m_currentStream->m_fileItem->GetDynURL().GetFileName();
     if (newURL.compare(oldURL) == 0 && file.GetStartOffset() &&
-        file.GetStartOffset() == m_currentStream->m_fileItem->GetEndOffset() && m_currentStream &&
+    file.GetStartOffset() == m_currentStream->m_fileItem->GetEndOffset() && m_currentStream &&
         m_currentStream->m_prepareTriggered)
     {
       m_currentStream->m_nextFileItem = std::make_unique<CFileItem>(file);
@@ -339,9 +339,11 @@ bool PAPlayer::QueueNextFileEx(const CFileItem &file, bool fadeIn)
   while (si->m_decoder.GetDataSize(true) == 0)
   {
     int status = si->m_decoder.GetStatus();
-    if (status == STATUS_ENDED   ||
-        status == STATUS_NO_FILE ||
-        si->m_decoder.ReadSamples(PACKET_SIZE) == RET_ERROR)
+    if (status == STATUS_ENDED || status == STATUS_NO_FILE ||
+        si->m_decoder.ReadSamples(PACKET_SIZE) == RET_ERROR ||
+        ((si->m_endOffset) &&
+         (si->m_framesSent >= (si->m_endOffset - si->m_startOffset) *
+                                  static_cast<int64_t>(si->m_audioFormat.m_sampleRate) / 1000)))
     {
       CLog::Log(LOGINFO, "PAPlayer::QueueNextFileEx - Error reading samples");
 
@@ -1158,7 +1160,7 @@ void PAPlayer::CloseFileCB(StreamInfo &si)
   CBookmark bookmark;
   double total = si.m_decoderTotal;
   if (si.m_endOffset)
-    total = si.m_endOffset;
+    total = si->m_endOffset;
   total -= si.m_startOffset;
   bookmark.totalTimeInSeconds = total / 1000;
   bookmark.timeInSeconds = (static_cast<double>(si.m_framesSent) /
