@@ -4299,3 +4299,50 @@ bool CFileItem::HasVideoExtras() const
   }
   return false;
 }
+
+bool CFileItem::IsFileFolder(EFileFolderType types) const
+{
+  EFileFolderType always_type = EFILEFOLDER_TYPE_ALWAYS;
+
+  /* internet streams are not directly expanded */
+  if(IsInternetStream())
+    always_type = EFILEFOLDER_TYPE_ONCLICK;
+
+  // strm files are not browsable
+  if (IsType(".strm") && (types & EFILEFOLDER_TYPE_ONBROWSE))
+    return false;
+
+  if(types & always_type)
+  {
+    // Chaptered audiobook/matroska files that are already in the music DB
+    // (MusicInfoTag loaded) must not be treated as file-folders during
+    // playback — the player has everything it needs from the database.
+    if ((IsAudioBook() || IsMatroskaAudio() || IsMatroskaVideo()) &&
+        HasMusicInfoTag() && GetMusicInfoTag()->Loaded())
+      return false;
+
+    if(IsSmartPlayList()
+    || (IsPlayList() && CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_playlistAsFolders) ||
+        IsAPK() || IsZIP() || IsRAR() || IsRSS() || IsAudioBook() || IsMatroskaAudio() ||
+         IsMatroskaVideo() || IsType(".ogg|.oga|.xbt")
+#if defined(TARGET_ANDROID)
+    || IsType(".apk")
+#endif
+    )
+    return true;
+  }
+
+  if (CServiceBroker::IsAddonInterfaceUp() &&
+      IsType(CServiceBroker::GetFileExtensionProvider().GetFileFolderExtensions().c_str()) &&
+      CServiceBroker::GetFileExtensionProvider().CanOperateExtension(m_strPath))
+    return true;
+
+  if(types & EFILEFOLDER_TYPE_ONBROWSE)
+  {
+    if((IsPlayList() && !CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_playlistAsFolders)
+    || IsDiscImage())
+      return true;
+  }
+
+  return false;
+}
