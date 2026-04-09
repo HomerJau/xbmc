@@ -238,8 +238,12 @@ void CSaveFileState::DoWork(CFileItem& item,
       if (item.IsAudioBook())
       {
         musicdatabase.Open();
+        int bookmarkMs{0};
+        if (bookmark.timeInSeconds > 0.0)
+          bookmarkMs = static_cast<int>(item.GetStartOffset() +
+                                        CUtil::ConvertSecsToMilliSecs(bookmark.timeInSeconds));
         musicdatabase.SetResumeBookmarkForAudioBook(
-            item, item.GetStartOffset() + CUtil::ConvertSecsToMilliSecs(bookmark.timeInSeconds));
+            item, bookmarkMs); // bookmarkMs of 0 clears the bookmark
         musicdatabase.Close();
       }
     }
