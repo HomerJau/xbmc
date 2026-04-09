@@ -436,6 +436,12 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
     }
 
     std::shared_ptr<CFileItem> item(new CFileItem(url.Get(), false));
+    if (isAudioBook)
+      item->SetMimeType("audio/x-m4b");
+    else if (url.IsFileType("mka"))
+      item->SetMimeType("audio/x-matroska");
+    else
+      item->SetMimeType("video/x-matroska");
     *item->GetMusicInfoTag() = albumtag;
 
     if (isAudioBook)

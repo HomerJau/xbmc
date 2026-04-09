@@ -235,7 +235,6 @@ void CSaveFileState::DoWork(CFileItem& item,
         }
       }
 
-
       if (item.HasProperty("item_start"))
       {
         musicdatabase.Open();
