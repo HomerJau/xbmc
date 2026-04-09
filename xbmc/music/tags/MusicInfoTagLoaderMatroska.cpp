@@ -61,7 +61,7 @@ static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
   const auto& attachedFiles = attachments->attachedFileList();
   for (const auto& file : attachedFiles)
   {
-    std::string mimeType = file.mimeType().toCString(true);
+    std::string mimeType = file.contentType().toCString(true);
     if (mimeType == "image/jpeg" || mimeType == "image/png" || mimeType == "image/bmp")
     {
       TagLib::ByteVector data = file.data();
@@ -339,7 +339,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
 
 /*!
  * use TagLib to read hierarchy of tags in file and populate album and chapter
- * (track) tags. This creates a map of chapterUid to track tags for each chapter.
+ * (track) tags. this creates a map of chapterUid to track tags for each chapter.
  * If coverTag is non-null, embedded cover art from Matroska attachments is set on it.
 */
 void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
