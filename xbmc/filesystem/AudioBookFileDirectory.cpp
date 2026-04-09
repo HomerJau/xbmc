@@ -506,15 +506,18 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
 
 bool CAudioBookFileDirectory::Exists(const CURL& url)
 {
-  // Fast path: if the file is known in the database, no need to open it
+  // Fast path: check the music database to avoid any file I/O.
+  // During playback this is called frequently (e.g. from IsAudioBook()),
+  // so it must be fast and must not open the actual media file.
   int dbSongCount = GetSongCountFromDatabase(url);
   if (dbSongCount > 1)
     return true;
-  else if (dbSongCount >= 0)
-    return false; // 0 or 1 songs — not an audiobook directory
+  if (dbSongCount >= 0)
+    return false; // 0 or 1 songs — not a multi-chapter audiobook
 
-  // Fallback: file not in database — check if it physically exists and has chapters
-  return CFile::Exists(url) && ContainsFiles(url);
+  // DB unavailable (-1). Avoid expensive ContainsFiles() — just check
+  // the file extension. Full chapter detection happens in GetDirectory().
+  return url.IsFileType("m4b") || url.IsFileType("mka") || url.IsFileType("mkv");
 }
 
 int CAudioBookFileDirectory::GetSongCountFromDatabase(const CURL& url)

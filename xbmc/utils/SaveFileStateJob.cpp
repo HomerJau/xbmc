@@ -235,7 +235,7 @@ void CSaveFileState::DoWork(CFileItem& item,
         }
       }
 
-      if (item.IsAudioBook())
+      if (item.HasProperty("item_start"))
       {
         musicdatabase.Open();
         int bookmarkMs{0};
