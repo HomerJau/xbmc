@@ -18,6 +18,7 @@
 #include "music/tags/MusicInfoTagLoaderMatroska.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
+#include "utils/URIUtils.h"
 #include "utils/log.h"
 #include "utils/StringUtils.h"
 
@@ -517,10 +518,10 @@ int CAudioBookFileDirectory::GetSongCountFromDatabase(const CURL& url)
   std::string strPath = URIUtils::GetDirectory(url.Get());
   std::string strFileName = URIUtils::GetFileName(url.Get());
 
-  std::string sql = PrepareSQL("SELECT COUNT(*) FROM song "
-                               "JOIN path ON song.idPath = path.idPath "
-                               "WHERE path.strPath = '%s' AND song.strFileName = '%s'",
-                               strPath.c_str(), strFileName.c_str());
+  std::string sql = db.PrepareSQL("SELECT COUNT(*) FROM song "
+                                  "JOIN path ON song.idPath = path.idPath "
+                                  "WHERE path.strPath = '%s' AND song.strFileName = '%s'",
+                                  strPath.c_str(), strFileName.c_str());
 
   int count = db.GetSingleValueInt(sql);
   db.Close();
