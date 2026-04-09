@@ -506,6 +506,14 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
 
 bool CAudioBookFileDirectory::Exists(const CURL& url)
 {
+  // Fast path: if the file is known in the database, no need to open it
+  int dbSongCount = GetSongCountFromDatabase(url);
+  if (dbSongCount > 1)
+    return true;
+  else if (dbSongCount >= 0)
+    return false; // 0 or 1 songs — not an audiobook directory
+
+  // Fallback: file not in database — check if it physically exists and has chapters
   return CFile::Exists(url) && ContainsFiles(url);
 }
 
