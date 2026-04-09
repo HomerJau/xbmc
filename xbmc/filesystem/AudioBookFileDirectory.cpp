@@ -521,9 +521,11 @@ bool CAudioBookFileDirectory::Exists(const CURL& url)
   if (dbSongCount >= 0)
     return false; // 0 or 1 songs — not a multi-chapter audiobook
 
-  // DB unavailable (-1). Avoid expensive ContainsFiles() — just check
-  // the file extension. Full chapter detection happens in GetDirectory().
-  return url.IsFileType("m4b") || url.IsFileType("mka") || url.IsFileType("mkv");
+  // DB unavailable (-1). Return false to avoid blocking playback.
+  // The file will be properly detected during library scan when the DB
+  // is available. Returning true here risks triggering GetDirectory()
+  // which opens more file/DB handles and can deadlock during playback.
+  return false;
 }
 
 int CAudioBookFileDirectory::GetSongCountFromDatabase(const CURL& url)
