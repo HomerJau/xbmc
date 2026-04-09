@@ -160,7 +160,7 @@ void CVideoPlayerAudioID3::ProcessID3(const unsigned char* data, unsigned int le
     ByteVectorStream tagStream(ByteVector(reinterpret_cast<const char*>(data), length));
     if (tagStream.isOpen())
     {
-      MPEG::File tagFile = MPEG::File(&tagStream, ID3v2::FrameFactory::instance());
+      MPEG::File tagFile(&tagStream);
       if (tagFile.isOpen())
       {
         if (tagFile.hasID3v1Tag())
