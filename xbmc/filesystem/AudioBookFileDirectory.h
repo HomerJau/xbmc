@@ -27,11 +27,22 @@ namespace XFILE
       bool IsAllowed(const CURL& url) const override { return true; }
 
     protected:
-      void AddCommaDelimitedString(const std::vector<std::string>& data,
-                                   const std::vector<std::string>& separators,
-                                   MUSIC_INFO::CMusicInfoTag& musictag);
       AVIOContext* m_ioctx = nullptr;
       AVFormatContext* m_fctx = nullptr;
       CFile m_file;
+
+    private:
+      static int GetSongCountFromDatabase(const CURL& url);
+
+      /*!
+       * \brief Ensure the FFmpeg format context (m_fctx) is open for codec info.
+       *
+       * If ContainsFiles() used the DB fast path, m_fctx will be null.
+       * This opens it on demand so GetDirectory() can read codec parameters.
+       *
+       * \param url The file URL to open.
+       * \return true if m_fctx is ready for use.
+       */
+      bool EnsureFFmpegContext(const CURL& url);
   };
 }
