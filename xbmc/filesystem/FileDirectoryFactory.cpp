@@ -239,7 +239,7 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
 
   if (pItem->IsAudioBook() || pItem->IsMatroskaAudio())
   {
-    if (!pItem->HasMusicInfoTag() || pItem->GetEndOffset() <= 0)
+    if (!pItem->HasMusicInfoTag() || !pItem->GetMusicInfoTag()->Loaded())
     {
       std::unique_ptr<CAudioBookFileDirectory> pDir(new CAudioBookFileDirectory);
         if (pDir->ContainsFiles(url))
@@ -254,7 +254,7 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
     int sourceIndex = CUtil::GetMatchingSource(pItem->GetPath(), *musicSources, isSource);
     if (sourceIndex >= 0 && sourceIndex < static_cast<int>(musicSources->size()))
     {
-       if (!pItem->HasMusicInfoTag() || pItem->GetEndOffset() <= 0)
+      if (!pItem->HasMusicInfoTag() || !pItem->GetMusicInfoTag()->Loaded())
       {
         std::unique_ptr<CAudioBookFileDirectory> pDir(new CAudioBookFileDirectory);
           if (pDir->ContainsFiles(url))
