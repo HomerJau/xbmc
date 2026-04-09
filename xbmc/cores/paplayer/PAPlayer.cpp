@@ -1160,7 +1160,7 @@ void PAPlayer::CloseFileCB(StreamInfo &si)
   CBookmark bookmark;
   double total = si.m_decoderTotal;
   if (si.m_endOffset)
-    total = si->m_endOffset;
+    total = si.m_endOffset;
   total -= si.m_startOffset;
   bookmark.totalTimeInSeconds = total / 1000;
   bookmark.timeInSeconds = (static_cast<double>(si.m_framesSent) /
