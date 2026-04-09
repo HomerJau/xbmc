@@ -261,4 +261,5 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
               pItem->HasMusicInfoTag(),
               pItem->HasMusicInfoTag() ? pItem->GetMusicInfoTag()->Loaded() : false,
               url.GetRedacted());
+  }
 
