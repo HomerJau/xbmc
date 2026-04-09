@@ -239,12 +239,12 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
 
   if (pItem->IsAudioBook() || pItem->IsMatroskaAudio())
   {
-    CLog::Log(LOGDEBUG,
-              "CFileDirectoryFactory::Create: AudioBook/MKA path — "
-              "HasMusicInfoTag={}, Loaded={}, path={}",
-              pItem->HasMusicInfoTag(),
-              pItem->HasMusicInfoTag() ? pItem->GetMusicInfoTag()->Loaded() : false,
-              url.GetRedacted());
+    // If the path is a musicdb:// URL, the file is already in the database —
+    // no need to open the actual file and parse it with TagLib/FFmpeg.
+    // This avoids multi-second delays on large files over NFS/SMB.
+    if (URIUtils::IsMusicDb(url.Get()))
+      return NULL;
+
     if (!pItem->HasMusicInfoTag() || !pItem->GetMusicInfoTag()->Loaded())
     {
       std::unique_ptr<CAudioBookFileDirectory> pDir(new CAudioBookFileDirectory);
@@ -255,12 +255,10 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
   }
   else if (pItem->IsMatroskaVideo() || url.IsFileType("mp4"))
   {
-    CLog::Log(LOGDEBUG,
-              "CFileDirectoryFactory::Create: MKV/MP4 path — "
-              "HasMusicInfoTag={}, Loaded={}, path={}",
-              pItem->HasMusicInfoTag(),
-              pItem->HasMusicInfoTag() ? pItem->GetMusicInfoTag()->Loaded() : false,
-              url.GetRedacted());
+    // Same musicdb:// fast path for MKV/MP4 files
+    if (URIUtils::IsMusicDb(url.Get()))
+      return NULL;
+
     VECSOURCES* musicSources = CMediaSourceSettings::GetInstance().GetSources("music");
     bool isSource;
     int sourceIndex = CUtil::GetMatchingSource(pItem->GetPath(), *musicSources, isSource);
@@ -269,8 +267,8 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
       if (!pItem->HasMusicInfoTag() || !pItem->GetMusicInfoTag()->Loaded())
       {
         std::unique_ptr<CAudioBookFileDirectory> pDir(new CAudioBookFileDirectory);
-        if (pDir->ContainsFiles(url))
-          return pDir.release();
+          if (pDir->ContainsFiles(url))
+            return pDir.release();
       }
     }
     return NULL;

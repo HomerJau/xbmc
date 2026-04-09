@@ -1124,12 +1124,11 @@ bool CFileItem::IsFileFolder(EFileFolderType types) const
   if (IsType(".strm") && (types & EFILEFOLDER_TYPE_ONBROWSE))
     return false;
 
-  /* Chaptered audiobook/matroska files that are already in the music DB
-     (MusicInfoTag loaded) must not be treated as file-folders during
-     playback — the player has everything it needs from the database.
-  */
+    // Chaptered audiobook/matroska files that are already in the music DB
+  // (MusicInfoTag loaded) must not be treated as file-folders during
+  // playback — the player has everything it needs from the database.
   if ((IsAudioBook() || IsMatroskaAudio() || IsMatroskaVideo()) &&
-      HasMusicInfoTag() && GetMusicInfoTag()->Loaded())
+      (IsMusicDb() || (HasMusicInfoTag() && GetMusicInfoTag()->Loaded())))
     return false;
 
   // DEBUG: Trace when chaptered file types still reach the file-folder path
