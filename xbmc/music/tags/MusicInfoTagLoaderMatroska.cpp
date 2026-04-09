@@ -61,7 +61,7 @@ static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
   const auto& attachedFiles = attachments->attachedFileList();
   for (const auto& file : attachedFiles)
   {
-    std::string mimeType = file.contentType().toCString(true);
+    std::string mimeType = file.mediaType().toCString(true);
     if (mimeType == "image/jpeg" || mimeType == "image/png" || mimeType == "image/bmp")
     {
       TagLib::ByteVector data = file.data();
