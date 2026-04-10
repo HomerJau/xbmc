@@ -198,9 +198,11 @@ void PAPlayer::CloseAllStreams(bool fade/* = true */)
   }
 }
 
-bool PAPlayer::OpenFile(const CFileItem& file, const CPlayerOptions &options)
+bool PAPlayer::OpenFile(const CFileItem& file, const CPlayerOptions& options)
 {
-  m_defaultCrossfadeMS = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_MUSICPLAYER_CROSSFADE) * 1000;
+  m_defaultCrossfadeMS = CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
+                             CSettings::SETTING_MUSICPLAYER_CROSSFADE) *
+                         1000;
   m_fullScreen = options.fullscreen;
 
   if (m_streams.size() > 1 || !m_defaultCrossfadeMS || m_isPaused)
@@ -209,6 +211,8 @@ bool PAPlayer::OpenFile(const CFileItem& file, const CPlayerOptions &options)
     StopThread();
     m_isPaused = false; // Make sure to reset the pause state
   }
+
+  m_isFinished = false; // Reset finished state for the new file
 
   {
     std::unique_lock<CCriticalSection> lock(m_streamsLock);
@@ -225,7 +229,7 @@ bool PAPlayer::OpenFile(const CFileItem& file, const CPlayerOptions &options)
 
     //start transition to next track
     StreamInfo* si = m_streams.front();
-    si->m_playNextAtFrame  = si->m_framesSent; //start next track at current frame
+    si->m_playNextAtFrame = si->m_framesSent; //start next track at current frame
     si->m_prepareTriggered = true; //next track is ready to go
   }
   lock.unlock();
