@@ -26,8 +26,6 @@
 #include "utils/URIUtils.h"
 #include "utils/log.h"
 
-#include <ranges>
-
 using namespace XFILE;
 using namespace MUSIC_INFO;
 
@@ -162,22 +160,22 @@ bool CMusicInfoLoader::LoadItemCached(CFileItem* pItem)
 
 bool CMusicInfoLoader::LoadItemLookup(CFileItem* pItem)
 {
-  if (m_pProgressCallback && !pItem->IsFolder())
+  if (m_pProgressCallback && !pItem->m_bIsFolder)
     m_pProgressCallback->SetProgressAdvance();
 
-  if ((pItem->IsFolder() && !MUSIC::IsAudio(*pItem)) || //
-      PLAYLIST::IsPlayList(*pItem) || PLAYLIST::IsSmartPlayList(*pItem) || //
+  if ((pItem->m_bIsFolder && !pItem->IsAudio()) || //
+      pItem->IsPlayList() || pItem->IsSmartPlayList() || //
       StringUtils::StartsWithNoCase(pItem->GetPath(), "newplaylist://") || //
       StringUtils::StartsWithNoCase(pItem->GetPath(), "newsmartplaylist://") || //
-      pItem->IsNFO() || (NETWORK::IsInternetStream(*pItem) && !MUSIC::IsMusicDb(*pItem)))
+      pItem->IsNFO() || (pItem->IsInternetStream() && !pItem->IsMusicDb()))
     return false;
 
-  if ((!pItem->HasMusicInfoTag() || !pItem->GetMusicInfoTag()->Loaded()) && MUSIC::IsAudio(*pItem))
+  if ((!pItem->HasMusicInfoTag() || !pItem->GetMusicInfoTag()->Loaded()) && pItem->IsAudio())
   {
     // first check the cached item
     CFileItemPtr mapItem = (*m_mapFileItems)[pItem->GetPath()];
     if (mapItem && mapItem->HasMusicInfoTag() && mapItem->GetMusicInfoTag()->Loaded() &&
-        mapItem->GetDateTime() == pItem->GetDateTime())
+        mapItem->m_dateTime == pItem->m_dateTime)
     { // Query map if we previously cached the file on HD
       *pItem->GetMusicInfoTag() = *mapItem->GetMusicInfoTag();
       if (mapItem->HasArt("thumb"))
@@ -196,7 +194,7 @@ bool CMusicInfoLoader::LoadItemLookup(CFileItem* pItem)
       }
 
       const auto it = m_songsMap.find(pItem->GetPath()); // Find file in song map
-            
+
       if (it != m_songsMap.end() && it->second.size() == 1)
       {
         // Have we loaded this item from database before,
@@ -210,13 +208,13 @@ bool CMusicInfoLoader::LoadItemLookup(CFileItem* pItem)
       {
         // Find matching song
         const auto& songs{it->second};
-        const auto it2{std::ranges::find_if(
-            songs,
-            [&pItem](const CSong& song)
-            {
-              return song.iStartOffset == static_cast<int>(pItem->GetStartOffset()) &&
-                     song.iEndOffset == static_cast<int>(pItem->GetEndOffset());
-            })};
+        const auto it2 =
+            std::find_if(songs.begin(), songs.end(),
+                         [&pItem](const CSong& song)
+                         {
+                           return song.iStartOffset == static_cast<int>(pItem->GetStartOffset()) &&
+                                  song.iEndOffset == static_cast<int>(pItem->GetEndOffset());
+                         });
         if (it2 != songs.end())
         {
           // Populate the music info tag from the matched song
@@ -232,7 +230,7 @@ bool CMusicInfoLoader::LoadItemLookup(CFileItem* pItem)
       }
       else if (CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
                    CSettings::SETTING_MUSICFILES_USETAGS) ||
-               MUSIC::IsCDDA(*pItem))
+               pItem->IsCDDA())
       { // Nothing found, load tag from file,
         // always try to load cddb info
         // get correct tag parser
