@@ -1131,17 +1131,17 @@ bool CFileItem::IsFileFolder(EFileFolderType types) const
       (IsMusicDb() || (HasMusicInfoTag() && GetMusicInfoTag()->Loaded())))
     return false;
 
-  // DEBUG: Trace when chaptered file types still reach the file-folder path
-  // Remove this logging once the playback delay issue is resolved.
-  if (IsAudioBook() || IsMatroskaAudio() || IsMatroskaVideo())
-  {
-    CLog::Log(LOGDEBUG,
-              "CFileItem::IsFileFolder: chaptered type reached file-folder check — "
-              "HasMusicInfoTag={}, Loaded={}, path={}",
-              HasMusicInfoTag(),
-              HasMusicInfoTag() ? GetMusicInfoTag()->Loaded() : false,
-              CURL::GetRedacted(GetPath()));
-  }
+  //// DEBUG: Trace when chaptered file types still reach the file-folder path
+  //// Remove this logging once the playback delay issue is resolved.
+  //if (IsAudioBook() || IsMatroskaAudio() || IsMatroskaVideo())
+  //{
+  //  CLog::Log(LOGDEBUG,
+  //            "CFileItem::IsFileFolder: chaptered type reached file-folder check — "
+  //            "HasMusicInfoTag={}, Loaded={}, path={}",
+  //            HasMusicInfoTag(),
+  //            HasMusicInfoTag() ? GetMusicInfoTag()->Loaded() : false,
+  //            CURL::GetRedacted(GetPath()));
+  //}
 
   if (types & always_type)
   {
