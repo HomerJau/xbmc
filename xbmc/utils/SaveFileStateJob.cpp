@@ -235,7 +235,11 @@ void CSaveFileState::DoWork(CFileItem& item,
         }
       }
 
-      if (item.HasProperty("item_start"))
+      // Only save audiobook resume bookmarks for chaptered files (cue sheets,
+      // audiobooks, chaptered Matroska) — identified by having a non-zero end
+      // offset.  Individual song files (including .mka without chapters) have
+      // endOffset == 0 and must not write audiobook bookmarks.
+      if (item.HasProperty("item_start") && item.GetEndOffset() > 0)
       {
         musicdatabase.Open();
         int bookmarkMs{0};
