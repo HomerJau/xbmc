@@ -34,7 +34,6 @@
 #include <taglib/matroskafile.h>
 #include <taglib/matroskasimpletag.h>
 #include <taglib/matroskatag.h>
-#include <taglib/tbufferedstream.h>
 #include <taglib/tfilestream.h>
 #include <taglib/tiostream.h>
 
@@ -346,18 +345,13 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
 
   TagLib::Matroska::File* matroskaFile = nullptr;
   Matroska::Tag* matroskatag = nullptr;
-
   try
   {
-    // Wrap the VFS stream in TagLib's native BufferedStream for dramatically
-    // faster parsing of large Matroska files over NFS/SMB.  This mirrors the
-    // TagLibFileStream → TagLibBufferedStream → MatroskaFile pattern used in
-    // the MMH interop project.  TagLib's EBML parser makes thousands of tiny
-    // reads interspersed with large seeks to skip Cluster elements; the native
-    // BufferedStream coalesces these at the C++ I/O layer, eliminating the
-    // per-read network round-trips that made 11 GB files take ~7 seconds.
-    TagLib::BufferedStream bufferedStream(&matroskaStream);
-    matroskaFile = new TagLib::Matroska::File(&bufferedStream, true, TagLib::AudioProperties::Fast);
+    // KodiTagLibStream provides a 256 KiB read-ahead buffer and deferred
+    // seeks, matching the BufferedIOStream used by the MMH interop project.
+    // This eliminates per-read NFS/SMB round-trips when TagLib's EBML parser
+    // makes thousands of tiny reads interspersed with large seeks.
+    matroskaFile = new TagLib::Matroska::File(&matroskaStream, true, TagLib::AudioProperties::Fast);
     if (matroskaFile->isValid())
       matroskatag = matroskaFile->tag(true);
     if (!matroskatag)
