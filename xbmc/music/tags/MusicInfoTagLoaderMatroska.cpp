@@ -407,20 +407,58 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
           }
         }
       }
-    } // FIX: Close the if (chapters) block here — tag processing must happen
-    // regardless of whether the file has a Chapters element
+    } 
 
     /*!
     * For parsing Matroska tags create a dummy chapter if no chapters are present
-    * to hold song tags for later processing for Kodi internal tags
+    * to hold song tags for later processing for Kodi internal tags.
+    * Some taggers like MP3tag save song tags as chapter tags with
+    * TargetTypeValue 30 but no ChapterUid, so need to save these somewhere.
+    *
+    * If chapters exist, fix any that have no end time set (endTime <= 0):
+    *  - use the next chapter's start time, or
+    *  - use the file duration for the last chapter.
     */
-    unsigned long long DummyChapterUid = 999000999000999;
+    constexpr unsigned long long DummyChapterUid = 999000999000999ULL;
     if (chapterCount == 0)
     {
       chapterOrder.push_back(std::make_tuple(DummyChapterUid, std::string("SongTags"), 0.0, 0.0));
       std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", "SongTags"}};
       chapterTags[DummyChapterUid] = chapterTagList;
     }
+    else
+    {
+      // Get file duration (seconds) for fixing the last chapter's missing end time
+      double fileDuration = 0.0;
+      TagLib::AudioProperties* audioProps = matroskaFile->audioProperties();
+      if (audioProps)
+        fileDuration = static_cast<double>(audioProps->lengthInSeconds());
+
+      for (size_t i = 0; i < chapterOrder.size(); ++i)
+      {
+        double endTime = std::get<3>(chapterOrder[i]);
+        if (endTime <= 0.0)
+        {
+          double newEndTime;
+          if (i + 1 < chapterOrder.size())
+          {
+            // use next chapter's start time
+            newEndTime = std::get<2>(chapterOrder[i + 1]);
+          }
+          else
+          {
+            // last chapter — use the file duration
+            newEndTime = fileDuration;
+          }
+          chapterOrder[i] = std::make_tuple(std::get<0>(chapterOrder[i]), // uid
+                                            std::get<1>(chapterOrder[i]), // name
+                                            std::get<2>(chapterOrder[i]), // startTime
+                                            newEndTime); // fixed endTime
+        }
+      }
+      // TODO: Need to look for micro chapters not at end and tell user to fix the file
+    }
+
 
     /*!
     * Define tags that support multiple values and need to be concatenated into a
