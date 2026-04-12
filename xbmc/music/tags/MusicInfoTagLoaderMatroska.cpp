@@ -1,4 +1,4 @@
-/*
+ï»¿/*
  *  Copyright (C) 2005-2018 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
@@ -20,21 +20,23 @@
 #ifdef TARGET_WINDOWS
 #include "platform/win32/CharsetConverter.h"
 #endif
-#include <taglib/matroskafile.h>
-#include <taglib/matroskatag.h>
-#include <taglib/matroskasimpletag.h>
-#include <taglib/matroskaattachments.h>
-#include <taglib/matroskaattachedfile.h>
-#include <taglib/matroskachapters.h>
-#include <taglib/matroskachapteredition.h>
+#include <array>
+#include <exception>
+#include <map>
+#include <tuple>
+#include <vector>
+
 #include <taglib/audioproperties.h>
+#include <taglib/matroskaattachedfile.h>
+#include <taglib/matroskaattachments.h>
+#include <taglib/matroskachapteredition.h>
+#include <taglib/matroskachapters.h>
+#include <taglib/matroskafile.h>
+#include <taglib/matroskasimpletag.h>
+#include <taglib/matroskatag.h>
+#include <taglib/tbufferedstream.h>
 #include <taglib/tfilestream.h>
 #include <taglib/tiostream.h>
-#include <map>
-#include <vector>
-#include <array>
-#include <tuple>
-#include <exception>
 
 using namespace MUSIC_INFO;
 using namespace XFILE;
@@ -89,13 +91,13 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
 
   std::vector<std::string> separators{";", " feat. ", " ft. ", " Feat. ", " Ft. ", ":",
                                       "|", "#", "/", " with ", "&"};
-  std::string musicsep = 
+  std::string musicsep =
       CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_musicItemSeparator;
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
     separators.push_back(musicsep);
 
   // Get tags, chapters, embedded cover art, and duration in one call
-  // (single file parse — avoids opening the Matroska file twice)
+  // (single file parse â€” avoids opening the Matroska file twice)
   std::map<std::string, std::string> fileTags;
   std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
   std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
@@ -121,11 +123,10 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   }
 
   if (!tag.GetAlbum().empty() || !tag.GetTitle().empty())
-     tag.SetLoaded(true);
+    tag.SetLoaded(true);
 
   return true;
 }
-
 
 void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
                                            const std::string& value,
@@ -135,8 +136,8 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
 {
   // Matroska Tag spec does not allow storing multi values in a single tag, but some tools
   // do it anyway using a separator. So we need to split the value using the separator and
-  // then join it back using the music item separator from as.xml if needed. 
-   if (key == "ALBUM")
+  // then join it back using the music item separator from as.xml if needed.
+  if (key == "ALBUM")
     tag.SetAlbum(value);
   else if (key == "ARTIST")
     // tag.SetArtist(StringUtils::Join(StringUtils::Split(value, separators), musicsep));
@@ -348,8 +349,15 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
 
   try
   {
-    matroskaFile =
-        new TagLib::Matroska::File(&matroskaStream, true, TagLib::AudioProperties::Fast);
+    // Wrap the VFS stream in TagLib's native BufferedStream for dramatically
+    // faster parsing of large Matroska files over NFS/SMB.  This mirrors the
+    // TagLibFileStream â†’ TagLibBufferedStream â†’ MatroskaFile pattern used in
+    // the MMH interop project.  TagLib's EBML parser makes thousands of tiny
+    // reads interspersed with large seeks to skip Cluster elements; the native
+    // BufferedStream coalesces these at the C++ I/O layer, eliminating the
+    // per-read network round-trips that made 11 GB files take ~7 seconds.
+    TagLib::BufferedStream bufferedStream(&matroskaStream);
+    matroskaFile = new TagLib::Matroska::File(&bufferedStream, true, TagLib::AudioProperties::Fast);
     if (matroskaFile->isValid())
       matroskatag = matroskaFile->tag(true);
     if (!matroskatag)
@@ -388,7 +396,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
         {
           for (const auto& chapter : edition.chapterList())
           {
-            // FIX: Use first display only — previous code overwrote the map entry
+            // FIX: Use first display only â€” previous code overwrote the map entry
             // for every display, so only the last survived
             std::string chapterName;
             if (!chapter.displayList().isEmpty())
@@ -405,7 +413,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
           }
         }
       }
-    } // FIX: Close the if (chapters) block here — tag processing must happen
+    } // FIX: Close the if (chapters) block here â€” tag processing must happen
     // regardless of whether the file has a Chapters element
 
     /*!
@@ -425,27 +433,28 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     * single internal Kodi tag with a semicolon separator if more than one value is
     * present. This is needed to support multiple values with Matroska
     */
-    static constexpr std::array<const char*, 21> MULTIPLE_VALUE_TAGS = {"ALBUMARTISTS",
-                                                                        "ALBUMARTISTSORT",
-                                                                        "ARTIST",
-                                                                        "ARTISTS",
-                                                                        "ARTISTSORT",
-                                                                        "ARRANGER",
-                                                                        "BAND",
-                                                                        "COMPOSER",
-                                                                        "COMPOSERSORT",
-                                                                        "CONDUCTOR",
-                                                                        "ENGINEER",
-                                                                        "GENRE",
-                                                                        "LYRICIST",
-                                                                        "MIXER",
-                                                                        "MOOD",
-                                                                        "MUSICBRAINZ_ALBUMARTISTID",
-                                                                        "MUSICBRAINZ_ARTISTID",
-                                                                        "PERFORMER",
-                                                                        "PRODUCER",
-                                                                        "REMIXED",
-                                                                        "WRITER"}; // clang-format on
+    static constexpr std::array<const char*, 21> MULTIPLE_VALUE_TAGS = {
+        "ALBUMARTISTS",
+        "ALBUMARTISTSORT",
+        "ARTIST",
+        "ARTISTS",
+        "ARTISTSORT",
+        "ARRANGER",
+        "BAND",
+        "COMPOSER",
+        "COMPOSERSORT",
+        "CONDUCTOR",
+        "ENGINEER",
+        "GENRE",
+        "LYRICIST",
+        "MIXER",
+        "MOOD",
+        "MUSICBRAINZ_ALBUMARTISTID",
+        "MUSICBRAINZ_ARTISTID",
+        "PERFORMER",
+        "PRODUCER",
+        "REMIXED",
+        "WRITER"}; // clang-format on
 
     /*!
     * Read all simple tags and group them by file (album or song files with no
@@ -582,7 +591,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
           }
           else
           {
-            // FIX: Corrected comment — chapterUid > 0 but not found in chapterTags,
+            // FIX: Corrected comment â€” chapterUid > 0 but not found in chapterTags,
             // so this chapter was not in the Chapters element. Fall back to fileTags.
             if (fileTags.find(TagName) == fileTags.end())
             {
@@ -621,7 +630,8 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
       }
     }
 
-    // Cleanup — stream is owned by caller, only delete the TagLib file object
+    // Cleanup â€” stream is owned by caller, only delete the TagLib file object.
+    // bufferedStream is stack-allocated and will be destroyed when scope exits.
     delete matroskaFile;
   }
   catch (const std::exception& e)

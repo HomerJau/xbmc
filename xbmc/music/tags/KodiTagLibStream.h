@@ -12,31 +12,24 @@
 
 #include <algorithm>
 #include <string>
-#include <vector>
-
 #include <taglib/tiostream.h>
 
 /*!
- * \brief VFS-backed TagLib IOStream adapter with read-ahead buffering.
+ * \brief Thin VFS-backed TagLib IOStream adapter.
  *
  * Allows TagLib to read through Kodi's virtual filesystem
  * (supports nfs://, smb://, etc.)
  *
- * TagLib performs many small reads (often just a few bytes) interspersed
- * with seeks.  Over network VFS backends each of those tiny reads becomes
- * a round-trip, which can stall Kodi noticeably.  This class keeps an
- * internal read-ahead buffer so that sequential small reads are served
- * from memory and the underlying CFile is only touched when the request
- * falls outside the buffered window.
+ * This class provides only a virtual-position optimisation: seeks are
+ * deferred until the next readBlock() so that consecutive seek-then-seek
+ * chains (common when TagLib skips Matroska Cluster elements) never
+ * touch the network.
  *
- * For Matroska files, TagLib walks every top-level EBML element (including
- * huge Cluster elements containing media data) by reading a short element
- * header, then seeking past the element body.  On a multi-GB file over
- * NFS/SMB each of those tiny reads at a new offset triggers a VFS
- * round-trip.  The virtual file position tracking here eliminates redundant
- * VFS seeks: the real CFile seek is deferred until data is actually read,
- * so consecutive seek-then-seek or seek-past-buffered-data chains cost
- * nothing on the network.
+ * All read-ahead buffering is delegated to TagLib's native
+ * BufferedStream, which wraps this stream in
+ * MusicInfoTagLoaderMatroska.cpp.  Keeping buffering in one place
+ * (inside TagLib) avoids double-buffering and gives TagLib's EBML
+ * parser optimal I/O coalescing.
  */
 class KodiTagLibStream : public TagLib::IOStream
 {
@@ -64,45 +57,19 @@ public:
     if (length == 0)
       return {};
 
-    const int64_t pos = m_virtualPos;
+    syncFilePosition(m_virtualPos);
 
-    // Try to satisfy the read entirely from the buffer
-    if (pos >= m_bufStart &&
-        pos + static_cast<int64_t>(length) <= m_bufStart + static_cast<int64_t>(m_bufFill))
+    TagLib::ByteVector bv(static_cast<unsigned int>(length), 0);
+    ssize_t bytesRead = m_file.Read(bv.data(), length);
+    if (bytesRead > 0)
     {
-      const size_t offset = static_cast<size_t>(pos - m_bufStart);
-      TagLib::ByteVector bv(m_buf.data() + offset, static_cast<unsigned int>(length));
-      m_virtualPos = pos + static_cast<int64_t>(length);
-      return bv;
+      bv.resize(static_cast<unsigned int>(bytesRead));
+      m_virtualPos += bytesRead;
+      m_filePos = m_virtualPos;
     }
+    else
+      bv.clear();
 
-    // For large reads that exceed the buffer size, bypass the buffer entirely
-    if (length > kBufCapacity)
-    {
-      invalidateBuffer();
-      syncFilePosition(pos);
-      TagLib::ByteVector bv(static_cast<unsigned int>(length), 0);
-      ssize_t bytesRead = m_file.Read(bv.data(), length);
-      if (bytesRead > 0)
-      {
-        bv.resize(static_cast<unsigned int>(bytesRead));
-        m_virtualPos = pos + bytesRead;
-        m_filePos = m_virtualPos;
-      }
-      else
-        bv.clear();
-      return bv;
-    }
-
-    // Fill the buffer starting at the current virtual position
-    fillBuffer(pos);
-
-    const size_t avail = std::min(length, static_cast<size_t>(m_bufFill));
-    if (avail == 0)
-      return {};
-
-    TagLib::ByteVector bv(m_buf.data(), static_cast<unsigned int>(avail));
-    m_virtualPos = pos + static_cast<int64_t>(avail);
     return bv;
   }
 
@@ -114,12 +81,11 @@ public:
   /*!
    * \brief Seek to a new position — updates only the virtual position.
    *
-   * The actual CFile::Seek is deferred until the next readBlock() or
-   * fillBuffer() call.  This is critical for Matroska parsing where TagLib
-   * performs thousands of seek-read-seek cycles to skip past Cluster
-   * elements.  Many of those seeks are followed by another seek (when the
-   * element is skipped) or land inside the existing buffer, so deferring
-   * avoids thousands of NFS/SMB round-trips.
+   * The actual CFile::Seek is deferred until the next readBlock().
+   * This is critical for Matroska parsing where TagLib performs thousands
+   * of seek cycles to skip past Cluster elements.  Many of those seeks
+   * are followed by another seek before any read, so deferring avoids
+   * thousands of NFS/SMB round-trips.
    */
   void seek(TagLib::offset_t offset, TagLib::IOStream::Position p) override
   {
@@ -143,15 +109,9 @@ public:
       m_virtualPos = m_fileLength;
   }
 
-  TagLib::offset_t tell() const override
-  {
-    return m_virtualPos;
-  }
+  TagLib::offset_t tell() const override { return m_virtualPos; }
 
-  TagLib::offset_t length() override
-  {
-    return m_fileLength;
-  }
+  TagLib::offset_t length() override { return m_fileLength; }
 
   void truncate(TagLib::offset_t) override {}
   void clear() override {}
@@ -160,14 +120,6 @@ public:
   XFILE::CFile& file() { return m_file; }
 
 private:
-  /*!
-   * \brief Size of the internal read-ahead buffer.
-   *
-   * 128 KiB is large enough to absorb hundreds of TagLib's typical tiny
-   * reads while small enough to avoid wasting memory.
-   */
-  static constexpr size_t kBufCapacity = 131072;
-
   /*!
    * \brief Ensure the real CFile position matches the given position.
    *
@@ -183,21 +135,6 @@ private:
     }
   }
 
-  void fillBuffer(int64_t filePos)
-  {
-    syncFilePosition(filePos);
-    m_bufStart = filePos;
-    ssize_t bytesRead = m_file.Read(m_buf.data(), kBufCapacity);
-    m_bufFill = (bytesRead > 0) ? static_cast<size_t>(bytesRead) : 0;
-    m_filePos = filePos + static_cast<int64_t>(m_bufFill);
-  }
-
-  void invalidateBuffer()
-  {
-    m_bufStart = -1;
-    m_bufFill = 0;
-  }
-
   std::string m_fileName;
   XFILE::CFile m_file;
   bool m_open = false;
@@ -210,9 +147,4 @@ private:
 
   // Tracks the real CFile position so we can skip redundant Seek calls
   int64_t m_filePos = 0;
-
-  // Read-ahead buffer state
-  std::vector<char> m_buf = std::vector<char>(kBufCapacity);
-  int64_t m_bufStart = -1; //!< File offset where buffer contents begin
-  size_t m_bufFill = 0;    //!< Number of valid bytes in the buffer
 };
