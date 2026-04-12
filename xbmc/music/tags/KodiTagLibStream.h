@@ -143,15 +143,9 @@ public:
       m_virtualPos = m_fileLength;
   }
 
-  TagLib::offset_t tell() const override
-  {
-    return m_virtualPos;
-  }
+  TagLib::offset_t tell() const override { return m_virtualPos; }
 
-  TagLib::offset_t length() override
-  {
-    return m_fileLength;
-  }
+  TagLib::offset_t length() override { return m_fileLength; }
 
   void truncate(TagLib::offset_t) override {}
   void clear() override {}
@@ -163,10 +157,12 @@ private:
   /*!
    * \brief Size of the internal read-ahead buffer.
    *
-   * 128 KiB is large enough to absorb hundreds of TagLib's typical tiny
-   * reads while small enough to avoid wasting memory.
+   * 256 KiB matches the buffer size used by the MMH interop project's
+   * BufferedIOStream.  This is large enough to absorb hundreds of TagLib's
+   * typical tiny EBML header reads in a single network round-trip while
+   * small enough to avoid wasting memory.
    */
-  static constexpr size_t kBufCapacity = 131072;
+  static constexpr size_t kBufCapacity = 262144;
 
   /*!
    * \brief Ensure the real CFile position matches the given position.
@@ -214,5 +210,5 @@ private:
   // Read-ahead buffer state
   std::vector<char> m_buf = std::vector<char>(kBufCapacity);
   int64_t m_bufStart = -1; //!< File offset where buffer contents begin
-  size_t m_bufFill = 0;    //!< Number of valid bytes in the buffer
+  size_t m_bufFill = 0; //!< Number of valid bytes in the buffer
 };
