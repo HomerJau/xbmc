@@ -71,21 +71,7 @@ struct Mp4CoverArt
 };
 
 /*!
- * \brief Read M4B chapters and embedded cover art using TagLib.
- *
- * Chapters are read via complexProperties("CHAPTER"), each entry having:
- *   "TITLE"      — chapter title (String)
- *   "START_TIME" — start time in milliseconds (LongLong)
- *   "END_TIME"   — end time in milliseconds (LongLong)
- *
- * Cover art is read via complexProperties("PICTURE"), each entry having:
- *   "data"       — image data (ByteVector)
- *   "mimeType"   — MIME type string (String)
- *
- * \param fileName  Path to the M4B file (VFS-safe).
- * \param[out] chapters  Vector of {title, startSecs, endSecs} tuples.
- * \param[out] coverArt  Embedded cover art info (size + MIME type).
- * \return true if the file was opened and parsed successfully.
+ * Read M4B chapters and embedded cover art using TagLib.
  */
 static bool ReadMp4TagLib(const std::string& fileName,
                           std::vector<Mp4Chapter>& chapters,
@@ -320,80 +306,8 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   if (isAudioBook && mp4CoverArt.found)
     albumtag.SetCoverArtInfo(mp4CoverArt.size, mp4CoverArt.mimeType);
 
-  // now get the AudioCodec etc
-  AVStream* st = nullptr;
-  std::string codec_name = "unknown";
-  int streamIndex = -1;
-  // Look for the default audio stream first
-  for (unsigned int i = 0; i < m_fctx->nb_streams; ++i)
-  {
-    if (m_fctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-    {
-      if (m_fctx->streams[i]->disposition & AV_DISPOSITION_DEFAULT)
-      {
-        streamIndex = i;
-        break;
-      }
-    }
-  }
-  // If no default stream was found, look for the first audio stream
-  if (streamIndex == -1)
-  {
-    for (unsigned int i = 0; i < m_fctx->nb_streams; ++i)
-    {
-      if (m_fctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-      {
-        streamIndex = i;
-        break;
-      }
-    }
-  }
-  if (streamIndex > -1)
-  {
-    st = m_fctx->streams[streamIndex];
-    albumtag.SetBitsPerSample(st->codecpar->bits_per_coded_sample);
-    albumtag.SetSampleRate(st->codecpar->sample_rate);
-    albumtag.SetBitRate(st->codecpar->bit_rate);
-    albumtag.SetNoOfChannels(st->codecpar->ch_layout.nb_channels);
-    codec_name = avcodec_get_name(st->codecpar->codec_id);
-    int par_profile = st->codecpar->profile;
-    if (st->codecpar->codec_id == AV_CODEC_ID_DTS)
-    {
-      switch (par_profile)
-      {
-        case FF_PROFILE_DTS_HD_MA:
-          codec_name = "dtshd_ma";
-          break;
-        case FF_PROFILE_DTS_96_24:
-          codec_name = "dts_96_24";
-          break;
-        case FF_PROFILE_DTS_HD_MA_X:
-          codec_name = "dtshd_ma_x";
-          break;
-        case FF_PROFILE_DTS_HD_MA_X_IMAX:
-          codec_name = "dtshd_ma_x_imax";
-          break;
-        case FF_PROFILE_DTS_ES:
-          codec_name = "dts_es";
-          break;
-        case FF_PROFILE_DTS_HD_HRA:
-          codec_name = "dtshd_hra";
-          break;
-        case FF_PROFILE_DTS_EXPRESS:
-          codec_name = "dts_express";
-          break;
-        default:
-          codec_name = "dca";
-          break;
-      }
-    }
-    if (st->codecpar->codec_id == AV_CODEC_ID_EAC3 && par_profile == FF_PROFILE_EAC3_DDP_ATMOS)
-      codec_name = "eac3_ddp_atmos";
-
-    if (st->codecpar->codec_id == AV_CODEC_ID_TRUEHD && par_profile == FF_PROFILE_TRUEHD_ATMOS)
-      codec_name = "truehd_atmos";
-    albumtag.SetCodec(codec_name);
-  }
+ // Read audio codec properties (bits per sample, sample rate, codec name etc.)
+  CMusicInfoTagLoaderMatroska::SetAudioPropertiesFromFFmpeg(m_fctx, albumtag);
 
   bool chapter_error = false;
   for (unsigned int i = 0; i < chapterCount; ++i)
