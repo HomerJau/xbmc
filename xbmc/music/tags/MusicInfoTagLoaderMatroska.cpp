@@ -48,9 +48,7 @@ using namespace TagLib;
 
 static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
                                      CMusicInfoTag& tag,
-                                     EmbeddedArt* art = nullptr) static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
-                                                      CMusicInfoTag& tag,
-                                                      EmbeddedArt* art = nullptr)
+                                     EmbeddedArt* art = nullptr)
 {
   TagLib::Matroska::Attachments* attachments = matroskaFile.attachments();
   if (!attachments)
