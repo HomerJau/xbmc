@@ -504,12 +504,14 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     if (audioProps)
       fileDuration = static_cast<double>(audioProps->lengthInSeconds());
 
-     /*!
+    /*!
     * First get all chapters and get the chapter name for each chapter and store
     * it in the chapterTags map. Then we have chapter name for each chapter
     * (track) if Chapters are not tagged.
     * Micro chapters (less than 1 second long) are skipped as they are not
     * real tracks/songs — they can occur in some Matroska files as artifacts.
+    * All editions are iterated, including synthetic editions with UID 0 that
+    * contain orphan chapters not assigned to any EditionEntry in the file.
     */
     int chapterCount = 0;
     TagLib::Matroska::Chapters* chapters = matroskaFile->chapters();
@@ -519,29 +521,26 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
           chapters->chapterEditionList();
       for (const auto& edition : editions)
       {
-        if (edition.uid())
+        for (const auto& chapter : edition.chapterList())
         {
-          for (const auto& chapter : edition.chapterList())
-          {
-            // Skip micro chapters less than 1 second long
-            long long durationNs = static_cast<long long>(chapter.timeEnd()) -
-                                   static_cast<long long>(chapter.timeStart());
-            if (durationNs <= 1000000000LL)
-              continue;
+          // Skip micro chapters less than 1 second long
+          long long durationNs = static_cast<long long>(chapter.timeEnd()) -
+                                 static_cast<long long>(chapter.timeStart());
+          if (durationNs <= 1000000000LL)
+            continue;
 
-            std::string chapterName;
-            if (!chapter.displayList().isEmpty())
-              chapterName = chapter.displayList().front().string().toCString(true);
+          std::string chapterName;
+          if (!chapter.displayList().isEmpty())
+            chapterName = chapter.displayList().front().string().toCString(true);
 
-            std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", chapterName}};
-            chapterTags[chapter.uid()] = chapterTagList;
+          std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", chapterName}};
+          chapterTags[chapter.uid()] = chapterTagList;
 
-            double startTimeSecs = static_cast<double>(chapter.timeStart()) / 1000000000.0;
-            double endTimeSecs = static_cast<double>(chapter.timeEnd()) / 1000000000.0;
-            chapterOrder.push_back(
-                std::make_tuple(chapter.uid(), chapterName, startTimeSecs, endTimeSecs));
-            chapterCount++;
-          }
+          double startTimeSecs = static_cast<double>(chapter.timeStart()) / 1000000000.0;
+          double endTimeSecs = static_cast<double>(chapter.timeEnd()) / 1000000000.0;
+          chapterOrder.push_back(
+              std::make_tuple(chapter.uid(), chapterName, startTimeSecs, endTimeSecs));
+          chapterCount++;
         }
       }
     }
