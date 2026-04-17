@@ -678,7 +678,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
       unsigned long long chapterUid = tag.chapterUid();
       unsigned long long targetTypeValue = tag.targetTypeValue();
       if (targetTypeValue == 50)
-        continue
+        continue;
 
       TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
       TagValue = tag.toString().to8Bit(true);
