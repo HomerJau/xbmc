@@ -125,6 +125,11 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
         ParseTag(t.first, t.second, separators, musicsep, tag);
     }
   }
+  
+  double fileDuration = 0.0;
+  TagLib::AudioProperties* audioProps = matroskaFile->audioProperties();
+  if (audioProps)
+    tag.SetDuration(static_cast<double>(audioProps->lengthInSeconds()));
 
   /*
    Finally get the audio properties (bitrate, sample rate, codec etc.) using FFmpeg.
