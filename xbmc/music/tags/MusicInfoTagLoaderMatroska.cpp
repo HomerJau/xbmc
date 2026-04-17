@@ -700,7 +700,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                           TagName) != std::end(MULTIPLE_VALUE_TAGS))
             {
               std::string currentValue = fileTags[TagName];
-              if (AppendIfNotDuplicate(currentValue, TagValue)
+              if (AppendIfNotDuplicate(currentValue, TagValue))
                 fileTags[TagName] = currentValue;
             }
           }
