@@ -562,6 +562,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
           std::make_tuple(FALLBACK_CHAPTER_UID, std::string("SongTags"), 0.0, 0.0));
       std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", "SongTags"}};
       chapterTags[FALLBACK_CHAPTER_UID] = chapterTagList;
+      chapterCount = 1;
     }
     else
     {
@@ -676,9 +677,11 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     {
       unsigned long long chapterUid = tag.chapterUid();
       unsigned long long targetTypeValue = tag.targetTypeValue();
+      if (targetTypeValue == 50)
+        continue
+
       TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
       TagValue = tag.toString().to8Bit(true);
-   
       if (targetTypeValue == 0)
       {
         if (TagName == "TITLE" && !TagValue.empty())
