@@ -20,6 +20,7 @@
 #ifdef TARGET_WINDOWS
 #include "platform/win32/CharsetConverter.h"
 #endif
+#include <cmath>
 #include <array>
 #include <exception>
 #include <map>
@@ -525,8 +526,9 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
         for (const auto& chapter : edition.chapterList())
         {
           // Skip micro chapters less than 1 second long
-          long long durationNs = static_cast<long long>(chapter.timeEnd()) -
-                                 static_cast<long long>(chapter.timeStart());
+          // Use abs to handle chapters with no end time (timeEnd returns 0 when not set)
+          long long durationNs = std::abs(static_cast<long long>(chapter.timeEnd()) -
+                                          static_cast<long long>(chapter.timeStart()));
           if (durationNs <= 1000000000LL)
             continue;
 
