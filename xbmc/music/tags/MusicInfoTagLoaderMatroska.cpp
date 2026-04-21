@@ -504,7 +504,9 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     double fileDuration = 0.0;
     TagLib::AudioProperties* audioProps = matroskaFile->audioProperties();
     if (audioProps)
+    {
       fileDuration = static_cast<double>(audioProps->lengthInSeconds());
+    }
 
     /*!
     * First get all chapters and get the chapter name for each chapter and store
@@ -634,6 +636,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     * Pass 1: Process album-level tags (targetTypeValue == 50) first so album
     *         metadata is established before track-level tags are processed.
     *         Special handling for TITLE tag which maps to ALBUM in Kodi.
+    *         targetTypeValue == 60 used my MP3Tag for Concerts
     * Pass 2: Process file-level (targetTypeValue == 0) and chapter/song
     *         (targetTypeValue == 30) tags.
     */
@@ -643,10 +646,10 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     // Pass 1: Process album-level tags (targetTypeValue == 50)
     for (const TagLib::Matroska::SimpleTag& tag : list)
     {
-      if (tag.targetTypeValue() == 50)
+      if (tag.targetTypeValue() == 50 || tag.targetTypeValue() == 60)
       {
         TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-        TagValue = tag.toString().to8Bit(true);
+        TagValue = tag.to8Bit(true);
         /*!
         * TITLE with targetTypeValue 50 is the Album title in Matroska spec
         * ALBUM was used in Kodi 21.3 for ffmpeg tag reding compatibility
@@ -680,11 +683,11 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     {
       unsigned long long chapterUid = tag.chapterUid();
       unsigned long long targetTypeValue = tag.targetTypeValue();
-      if (targetTypeValue == 50)
+      if (targetTypeValue == 50 || targetTypeValue == 60)
         continue;
 
       TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-      TagValue = tag.toString().to8Bit(true);
+      TagValue = tag.to8Bit(true);
       if (targetTypeValue == 0)
       {
         if (TagName == "TITLE" && !TagValue.empty())
