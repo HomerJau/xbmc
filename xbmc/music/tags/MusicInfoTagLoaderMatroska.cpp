@@ -649,7 +649,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
       if (tag.targetTypeValue() == 50 || tag.targetTypeValue() == 60)
       {
         TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-        TagValue = tag.to8Bit(true);
+        TagValue = tag.toString().to8Bit(true);
         /*!
         * TITLE with targetTypeValue 50 is the Album title in Matroska spec
         * ALBUM was used in Kodi 21.3 for ffmpeg tag reding compatibility
@@ -687,7 +687,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
         continue;
 
       TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-      TagValue = tag.to8Bit(true);
+      TagValue = tag.toString().to8Bit(true);
       if (targetTypeValue == 0)
       {
         if (TagName == "TITLE" && !TagValue.empty())
