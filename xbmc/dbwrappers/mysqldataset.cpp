@@ -133,40 +133,29 @@ int MysqlDatabase::status()
 
 int MysqlDatabase::setErr(int err_code, const char* qry)
 {
-  switch (err_code)
+  if (err_code == MYSQL_OK)
   {
-    case MYSQL_OK:
-      error = "Successful result";
-      break;
-    case CR_COMMANDS_OUT_OF_SYNC:
-      error = "Commands were executed in an improper order";
-      break;
-    case CR_SERVER_GONE_ERROR:
-      error = "The MySQL server has gone away";
-      break;
-    case CR_SERVER_LOST:
-      error = "The connection to the server was lost during this query";
-      break;
-    case CR_UNKNOWN_ERROR:
-      error = "An unknown error occurred";
-      break;
-    case 1146: /* ER_NO_SUCH_TABLE */
-      error = "The table does not exist";
-      break;
-    default:
-      error = StringUtils::Format("Undefined MySQL error: Code ({})", err_code);
-      break;
+    error = "Success";
+  }
+  else
+  {
+    const unsigned int err = mysql_errno(conn);
+    if (err != static_cast<unsigned int>(err_code))
+      CLog::LogF(LOGERROR,
+                 "setErr was not called immediately after the error happened (function return code "
+                 "{}, mysql_errno {})",
+                 err_code, err);
+
+    const char* errMsg = mysql_error(conn);
+
+    error = StringUtils::Format("MySQL error {} ({}): {}", err_code, mysql_sqlstate(conn),
+                                *errMsg != 0 ? errMsg : "unknown error");
   }
   error = "[" + db + "] " + error;
   error += "\nQuery: ";
   error += qry;
   error += "\n";
   return err_code;
-}
-
-const char* MysqlDatabase::getErrorMsg()
-{
-  return error.c_str();
 }
 
 void MysqlDatabase::configure_connection()
@@ -217,39 +206,48 @@ int MysqlDatabase::connect(bool create_new)
   if (host.empty() || db.empty())
     return DB_CONNECTION_NONE;
 
-  std::string resolvedHost;
-  if (!StringUtils::EqualsNoCase(host, "localhost") &&
-      CServiceBroker::GetDNSNameCache()->Lookup(host, resolvedHost))
+  if (!StringUtils::EqualsNoCase(host, "localhost"))
   {
-    if (host != resolvedHost)
-      CLog::LogF(LOGDEBUG, "Replacing configured host {} with resolved host {}", host,
-                 resolvedHost);
+    std::string resolvedHost;
 
-    host = resolvedHost;
+    if (!CServiceBroker::GetDNSNameCache()->Lookup(host, resolvedHost))
+      return DB_CONNECTION_NONE;
+
+    if (host != resolvedHost)
+    {
+      static std::string lastHost;
+      static std::string lastResolvedHost;
+
+      if (host != lastHost || resolvedHost != lastResolvedHost)
+      {
+        CLog::LogF(LOGDEBUG, "Replacing configured host {} with resolved host {}", host,
+                   resolvedHost);
+        lastHost = host;
+        lastResolvedHost = resolvedHost;
+      }
+      host = resolvedHost;
+    }
   }
 
   try
   {
     disconnect();
 
-    conn = mysql_init(nullptr);
-    if (conn == nullptr)
-      return DB_CONNECTION_NONE;
-
-    if (!key.empty() || !cert.empty() || !ca.empty() || !capath.empty() || !ciphers.empty())
+    if (!conn)
     {
-      mysql_ssl_set(conn, key.empty() ? nullptr : key.c_str(),
-                    cert.empty() ? nullptr : cert.c_str(), ca.empty() ? nullptr : ca.c_str(),
-                    capath.empty() ? nullptr : capath.c_str(),
-                    ciphers.empty() ? nullptr : ciphers.c_str());
+      conn = mysql_init(conn);
+      if (!key.empty() || !cert.empty() || !ca.empty() || !capath.empty() || !ciphers.empty())
+      {
+        mysql_ssl_set(conn, key.empty() ? nullptr : key.c_str(),
+                      cert.empty() ? nullptr : cert.c_str(), ca.empty() ? nullptr : ca.c_str(),
+                      capath.empty() ? nullptr : capath.c_str(),
+                      ciphers.empty() ? nullptr : ciphers.c_str());
+      }
+      mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &connect_timeout);
     }
-    mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &connect_timeout);
 
     if (!CWakeOnAccess::GetInstance().WakeUpHost(host, "MySQL : " + db))
-    {
-      disconnect();
       return DB_CONNECTION_NONE;
-    }
 
     // establish connection with just user credentials
     if (mysql_real_connect(conn, host.c_str(), login.c_str(), passwd.c_str(), nullptr,
@@ -340,13 +338,13 @@ int MysqlDatabase::connect(bool create_new)
 
     CLog::Log(LOGERROR, "Unable to open database: {} [{}]({})", db, mysql_errno(conn),
               mysql_error(conn));
+
+    return DB_CONNECTION_NONE;
   }
   catch (...)
   {
     CLog::Log(LOGERROR, "Unable to open database: {} ({})", db, GetLastError());
   }
-
-  disconnect();
   return DB_CONNECTION_NONE;
 }
 
@@ -430,7 +428,7 @@ int MysqlDatabase::copy(const char* backup_name)
       }
 
       // copy the table definition
-      sqlcmd = StringUtils::Format("CREATE TABLE `{}`.{} LIKE {}", backup_name, row[0], row[0]);
+      sqlcmd = StringUtils::Format("CREATE TABLE `{}`.`{}` LIKE `{}`", backup_name, row[0], row[0]);
       ret = query_with_reconnect(sqlcmd.c_str());
       if (ret != MYSQL_OK)
       {
@@ -450,8 +448,8 @@ int MysqlDatabase::copy(const char* backup_name)
       }
 
       // copy the table data
-      sqlcmd =
-          StringUtils::Format("INSERT INTO `{}`.{} SELECT * FROM {}", backup_name, row[0], row[0]);
+      sqlcmd = StringUtils::Format("INSERT INTO `{}`.`{}` SELECT * FROM `{}`", backup_name, row[0],
+                                   row[0]);
       ret = query_with_reconnect(sqlcmd.c_str());
       if (ret != MYSQL_OK)
       {
@@ -497,7 +495,7 @@ int MysqlDatabase::drop_analytics()
   {
     while ((row = mysql_fetch_row(res)) != nullptr)
     {
-      sqlcmd = StringUtils::Format("ALTER TABLE `{}`.{} DROP INDEX {}", db, row[0], row[1]);
+      sqlcmd = StringUtils::Format("ALTER TABLE `{}`.`{}` DROP INDEX `{}`", db, row[0], row[1]);
       ret = query_with_reconnect(sqlcmd.c_str());
 
       if (ret != MYSQL_OK)
@@ -525,7 +523,7 @@ int MysqlDatabase::drop_analytics()
     while ((row = mysql_fetch_row(res)) != nullptr)
     {
       /* we do not need IF EXISTS because these views are exist */
-      sqlcmd = StringUtils::Format("DROP VIEW `{}`.{}", db, row[0]);
+      sqlcmd = StringUtils::Format("DROP VIEW `{}`.`{}`", db, row[0]);
       ret = query_with_reconnect(sqlcmd.c_str());
       if (ret != MYSQL_OK)
       {
@@ -551,7 +549,7 @@ int MysqlDatabase::drop_analytics()
   {
     while ((row = mysql_fetch_row(res)) != nullptr)
     {
-      sqlcmd = StringUtils::Format("DROP TRIGGER `{}`.{}", db, row[0]);
+      sqlcmd = StringUtils::Format("DROP TRIGGER `{}`.`{}`", db, row[0]);
       ret = query_with_reconnect(sqlcmd.c_str());
       if (ret != MYSQL_OK)
       {
@@ -578,7 +576,7 @@ int MysqlDatabase::drop_analytics()
   {
     while ((row = mysql_fetch_row(res)) != nullptr)
     {
-      sqlcmd = StringUtils::Format("DROP FUNCTION `{}`.{}", db, row[0]);
+      sqlcmd = StringUtils::Format("DROP FUNCTION `{}`.`{}`", db, row[0]);
       ret = query_with_reconnect(sqlcmd.c_str());
       if (ret != MYSQL_OK)
       {
@@ -1821,7 +1819,7 @@ void MysqlDataset::make_query(StringList& _sql)
       Dataset::parse_sql(query);
       if ((static_cast<MysqlDatabase*>(db)->query_with_reconnect(query.c_str())) != MYSQL_OK)
       {
-        throw DbErrors(db->getErrorMsg());
+        throw DbErrors("%s", db->getErrorMsg());
       }
     } // end of for
 
@@ -1910,7 +1908,7 @@ bool MysqlDataset::dropIndex(const char* table, const char* index)
 
   if (num_rows())
   {
-    sql = "ALTER TABLE %s DROP INDEX %s";
+    sql = "ALTER TABLE `%s` DROP INDEX `%s`";
     sql_prepared = static_cast<MysqlDatabase*>(db)->prepare(sql.c_str(), table, index);
 
     if (exec(sql_prepared) != MYSQL_OK)
@@ -1948,7 +1946,7 @@ int MysqlDataset::exec(const std::string& sql)
 
   if (res != MYSQL_OK)
   {
-    throw DbErrors(db->getErrorMsg());
+    throw DbErrors("%s", db->getErrorMsg());
   }
   else
   {
@@ -1989,7 +1987,7 @@ bool MysqlDataset::query(const std::string& query)
   if (static_cast<MysqlDatabase*>(db)->setErr(
           static_cast<MysqlDatabase*>(db)->query_with_reconnect(qry.c_str()), qry.c_str()) !=
       MYSQL_OK)
-    throw DbErrors(db->getErrorMsg());
+    throw DbErrors("%s", db->getErrorMsg());
 
   MYSQL* conn = handle();
   stmt = mysql_store_result(conn);
