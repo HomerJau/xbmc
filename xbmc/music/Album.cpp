@@ -399,39 +399,17 @@ std::vector<int> CAlbum::GetArtistIDArray() const
 
 std::string CAlbum::GetReleaseType() const
 {
-  return releaseType.ToString();
-  //return ReleaseTypeToString(releaseType);
+  return std::string(releaseType.ToString());
 }
 
 void CAlbum::SetReleaseType(const std::string& strReleaseType)
 {
   releaseType.FromString(strReleaseType);
-  //releaseType = ReleaseTypeFromString(strReleaseType);
-}
-
-void CAlbum::SetDateAdded(const std::string& strDateAdded)
-{
-  dateAdded.SetFromDBDateTime(strDateAdded);
-}
-
-void CAlbum::SetDateUpdated(const std::string& strDateUpdated)
-{
-  dateUpdated.SetFromDBDateTime(strDateUpdated);
-}
-
-void CAlbum::SetDateNew(const std::string& strDateNew)
-{
-  dateNew.SetFromDBDateTime(strDateNew);
-}
-
-void CAlbum::SetLastPlayed(const std::string& strLastPlayed)
-{
-  lastPlayed.SetFromDBDateTime(strLastPlayed);
 }
 
 std::string CAlbum::ReleaseTypeToString(AudioType releaseType)
 {
-  return releaseType.ToString();
+  return std::string(releaseType.ToString());
 }
 
 AudioType CAlbum::ReleaseTypeFromString(const std::string& strReleaseType)

@@ -781,13 +781,13 @@ std::string CSmartPlaylistRule::GetBooleanQuery(const std::string& negate,
     {
       std::string SQL;
       SQL = StringUtils::Format("albumview.strReleaseType like '{}'",
-                       AudioType::ToString(AudioType::Content::Concert).c_str());
+                                AudioType::ToStdString(AudioType::Content::Concert));
       return negate + SQL;
     }
     if (m_field == static_cast<int>(Field::IS_AUDIOBOOK))
       return negate +
              StringUtils::Format("albumview.strReleaseType like '{}'",
-                                 AudioType::ToString(AudioType::Content::AudioBook).c_str());
+                                 AudioType::ToStdString(AudioType::Content::AudioBook));
   }
   return "";
 }

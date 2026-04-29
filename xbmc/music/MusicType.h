@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>      
 
 class AudioType
 {
@@ -34,23 +35,27 @@ public:
   constexpr Content GetContent() const noexcept { return m_type; }
 
   // Instance method for converting to string
-  constexpr std::string ToString() const noexcept
+  constexpr std::string_view ToString() const noexcept
   {
     auto it = std::ranges::find(releaseTypes, m_type, &ReleaseTypeInfo::type);
-    return it != releaseTypes.end() ? it->name : "album";
+    return it != releaseTypes.end() ? it->name : std::string_view{"album"};
   }
 
   // Static factory from string
-  static constexpr std::optional<AudioType> FromString(std::string str) noexcept
+  static constexpr std::optional<AudioType> FromString(std::string_view str) noexcept
   {
     auto it = std::ranges::find(releaseTypes, str, &ReleaseTypeInfo::name);
     return it != releaseTypes.end() ? std::optional{AudioType{it->type}} : std::nullopt;
   }
 
-  static std::string ToString(Content type)
-{
-  return AudioType(type).ToString();
-}
+  static constexpr std::string_view ToString(Content type) noexcept
+  {
+    return AudioType(type).ToString();
+  }
+
+  // Convenience: owning std::string version for APIs requiring null-terminated strings (e.g. c_str()).
+  std::string ToStdString() const { return std::string{ToString()}; }
+  static std::string ToStdString(Content type) { return std::string{ToString(type)}; }
 
   // Comparisons (defaulted generates all 6 operators: ==, !=, <, <=, >, >=)
   constexpr auto operator<=>(const AudioType&) const noexcept = default;
@@ -61,7 +66,7 @@ private:
   struct ReleaseTypeInfo
   {
     Content type;
-    std::string name;
+    std::string_view name;
   };
 
   static constexpr std::array releaseTypes{
