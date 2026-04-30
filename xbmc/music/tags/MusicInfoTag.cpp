@@ -1003,9 +1003,9 @@ void CMusicInfoTag::Serialize(CVariant& value) const
   value["compilationartist"] = m_bCompilation;
   value["compilation"] = m_bCompilation;
   if (m_type.compare(MediaTypeAlbum) == 0)
-    value["releasetype"] = m_albumReleaseType.ToString();
+    value["releasetype"] = m_albumReleaseType.ToStdString();
   else if (m_type.compare(MediaTypeSong) == 0)
-    value["albumreleasetype"] = m_albumReleaseType.ToString();
+    value["albumreleasetype"] = m_albumReleaseType.ToStdString();
   value["isboxset"] = m_bBoxset;
   value["totaldiscs"] = m_iDiscTotal;
   value["disctitle"] = m_strDiscSubtitle;
