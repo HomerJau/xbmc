@@ -388,13 +388,13 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     }
     
     // Read embedded cover art from attachments 
-    if (coverTag)
+   /* if (coverTag)
       GetMatroskaEmbeddedCover(*matroskaFile, *coverTag, art);
-    double fileDuration = 0.0;
+    double fileDuration = 0.0;*/
 
-    TagLib::AudioProperties* audioProps = matroskaFile->audioProperties();
+  /*  TagLib::AudioProperties* audioProps = matroskaFile->audioProperties();
     if (audioProps)
-      fileDuration = static_cast<double>(audioProps->lengthInSeconds());
+      fileDuration = static_cast<double>(audioProps->lengthInSeconds());*/
 
     /*!
     * First get all chapters and get the chapter name for each chapter and store
