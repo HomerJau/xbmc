@@ -9,12 +9,11 @@
 
 #include "IFileDirectory.h"
 #include "music/tags/MusicInfoTag.h"
-
 #include <memory>
-
 extern "C" {
 #include <libavformat/avformat.h>
 }
+
 namespace XFILE
 {
   class CAudioBookFileDirectory : public IFileDirectory

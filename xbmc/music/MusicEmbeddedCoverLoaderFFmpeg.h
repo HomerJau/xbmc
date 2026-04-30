@@ -36,5 +36,14 @@ public:
   static void GetEmbeddedCover(AVFormatContext* fctx,
                                CMusicInfoTag& tag,
                                EmbeddedArt* art = nullptr);
+
+  /*!
+   *  Convenience overload that opens the file via FFmpeg internally.
+   *  Use when the caller does not already have an AVFormatContext (e.g. the
+   *  Matroska TagLib loader). Returns false if the file could not be opened.
+   */
+  static bool GetEmbeddedCover(const std::string& strFileName,
+                               CMusicInfoTag& tag,
+                               EmbeddedArt* art = nullptr);
 };
 } // namespace MUSIC_INFO

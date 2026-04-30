@@ -11,6 +11,7 @@
 #include "KodiTagLibStream.h"
 #include "MusicInfoTag.h"
 #include "ServiceBroker.h"
+#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
 #include "filesystem/File.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
@@ -131,6 +132,23 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
       for (const auto& t : it->second)
         ParseTag(t.first, t.second, separators, musicsep, tag);
     }
+  }
+
+    // Look for any embedded cover art
+  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(strFileName, tag, art);
+
+  // Get Codec data using FFmpeg (if taglib accurate for all codecs yet v2.2.1)
+  bool haveFFmpegInfo = false;
+  musicCodecInfo codec_info;
+  haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info);
+  if (haveFFmpegInfo) 
+  {
+    tag.SetBitRate(codec_info.bitRate);
+    tag.SetSampleRate(codec_info.sampleRate);
+    tag.SetBitsPerSample(codec_info.bitsPerSample);
+    tag.SetCodec(codec_info.codecName);
+    tag.SetNoOfChannels(codec_info.channels);
+    tag.SetDuration(codec_info.duration);
   }
 
   if (!tag.GetAlbum().empty() || !tag.GetTitle().empty())

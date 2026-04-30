@@ -9,6 +9,7 @@
 #pragma once
 
 #include "ImusicInfoTagLoader.h"
+#include "music/tags/MusicCodecInfoFFmpeg.h"
 #include "KodiTagLibStream.h"
 
 #include <map>
