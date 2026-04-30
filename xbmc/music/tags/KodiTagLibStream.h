@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2024 Team Kodi
+ *  Copyright (C) 2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -13,17 +13,15 @@
 #include <algorithm>
 #include <string>
 #include <vector>
-
 #include <taglib/tiostream.h>
 
 /*!
- * \brief VFS-backed TagLib IOStream adapter with read-ahead buffering.
- *
+ * VFS-backed TagLib IOStream adapter with read-ahead buffering.
  * Allows TagLib to read through Kodi's virtual filesystem
  * (supports nfs://, smb://, etc.)
  *
  * TagLib performs many small reads (often just a few bytes) interspersed
- * with seeks.  Over network VFS backends each of those tiny reads becomes
+ * with seeks. Over network VFS backends each of those tiny reads becomes
  * a round-trip, which can stall Kodi noticeably.  This class keeps an
  * internal read-ahead buffer so that sequential small reads are served
  * from memory and the underlying CFile is only touched when the request
@@ -31,7 +29,7 @@
  *
  * For Matroska files, TagLib walks every top-level EBML element (including
  * huge Cluster elements containing media data) by reading a short element
- * header, then seeking past the element body.  On a multi-GB file over
+ * header, then seeking past the element body. On a multi-GB file over
  * NFS/SMB each of those tiny reads at a new offset triggers a VFS
  * round-trip.  The virtual file position tracking here eliminates redundant
  * VFS seeks: the real CFile seek is deferred until data is actually read,
@@ -112,12 +110,10 @@ public:
   bool readOnly() const override { return true; }
 
   /*!
-   * \brief Seek to a new position — updates only the virtual position.
-   *
    * The actual CFile::Seek is deferred until the next readBlock() or
    * fillBuffer() call.  This is critical for Matroska parsing where TagLib
    * performs thousands of seek-read-seek cycles to skip past Cluster
-   * elements.  Many of those seeks are followed by another seek (when the
+   * elements. Many of those seeks are followed by another seek (when the
    * element is skipped) or land inside the existing buffer, so deferring
    * avoids thousands of NFS/SMB round-trips.
    */
@@ -155,18 +151,14 @@ public:
 
 private:
   /*!
-   * \brief Size of the internal read-ahead buffer.
-   *
-   * 256 KiB matches the buffer size used by the MMH interop project's
-   * BufferedIOStream.  This is large enough to absorb hundreds of TagLib's
-   * typical tiny EBML header reads in a single network round-trip while
-   * small enough to avoid wasting memory.
+   * Internal read-ahead buffer size of 256 KiB is large
+   * enough to absorb hundreds of TagLib's typical tiny EBML
+   * header reads in a single network round-trip while small
+   * enough to avoid wasting memory.
    */
   static constexpr size_t kBufCapacity = 262144;
 
   /*!
-   * \brief Ensure the real CFile position matches the given position.
-   *
    * Only issues a CFile::Seek if the real file position has diverged
    * from the requested position (i.e. after virtual-only seeks).
    */
