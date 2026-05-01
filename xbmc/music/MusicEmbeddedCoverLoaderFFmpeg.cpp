@@ -9,9 +9,10 @@
 #include "MusicEmbeddedCoverLoaderFFmpeg.h"
 
 #include "cores/FFmpeg.h"
-#include "filesystem/File.h"
+#include "filesystem/File.h"    
 #include "tags/MusicInfoTag.h"
 #include "utils/EmbeddedArt.h"
+#include <string>
 
 using namespace MUSIC_INFO;
 using namespace XFILE;
