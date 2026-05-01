@@ -8,8 +8,11 @@
 
 #pragma once
 
+#include <string>
+
 struct AVFormatContext;
 class EmbeddedArt;
+
 
 namespace MUSIC_INFO
 {
