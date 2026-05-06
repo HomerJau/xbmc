@@ -11,6 +11,7 @@
 #include "KodiTagLibStream.h"
 #include "MusicInfoTag.h"
 #include "ServiceBroker.h"
+#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
 #include "filesystem/File.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
@@ -37,16 +38,13 @@
 #include <taglib/matroskatag.h>
 #include <taglib/tfilestream.h>
 #include <taglib/tiostream.h>
-extern "C"
-{
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-}
 
 using namespace MUSIC_INFO;
 using namespace XFILE;
 using namespace TagLib;
 
+// Helper function to read embedded cover art from Matroska attachments and
+// set it on the tag and optional art object
 static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
                                      CMusicInfoTag& tag,
                                      EmbeddedArt* art = nullptr)
@@ -73,13 +71,47 @@ static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
   }
 }
 
-// Helper to append a new value to an existing tag value with " / " separator, but only if it's not already present
-static bool AppendIfNotDuplicate(std::string& currentValue, const std::string& newValue)
+namespace
 {
-  if (currentValue == newValue || currentValue.find("/ " + newValue) != std::string::npos ||
-      currentValue.find(newValue + " /") != std::string::npos)
+const std::vector<std::string> SupportedArtistMultiValueSeparators = {";", "|"};
+const std::vector<std::string> SupportedMultiValueSeparators = {";", "/", "|", ","};
+} 
+
+// Appends " | " + newValue to currentValue if newValue is not already present
+// (case-insensitive) among the existing delimited values. The set of delimiters
+// used to split currentValue depends on whether tagname refers to an artist tag.
+// Returns true if the value was appended, false otherwise.
+static bool AppendIfNotDuplicate(std::string& currentValue,
+                                 const std::string& newValue,
+                                 const std::string& tagname)
+{
+  const std::vector<std::string>& separators = (tagname.find("ARTIST") != std::string::npos)
+                                                   ? SupportedArtistMultiValueSeparators
+                                                   : SupportedMultiValueSeparators;
+  try
+  {
+    std::vector<std::string> existingValues = StringUtils::Split(currentValue, separators);
+
+    for (auto& existing : existingValues)
+    {
+      StringUtils::Trim(existing);
+      if (existing.empty())
+        continue; // mirrors RemoveEmptyEntries
+      if (StringUtils::EqualsNoCase(existing, newValue))
+        return false;
+    }
+  }
+  catch (const std::exception& ex)
+  {
+    CLog::Log(LOGERROR, "AppendIfNotDuplicate: {}", ex.what());
     return false;
-  currentValue += " / " + newValue;
+  }
+
+  if (currentValue.empty())
+    currentValue = newValue;
+  else
+    currentValue += " | " + newValue;
+
   return true;
 }
 
@@ -127,56 +159,21 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
     }
   }
 
-  /*
-   Finally get the audio properties (bitrate, sample rate, codec etc.) using FFmpeg.
-   Reuse the CFile already opened by KodiTagLibStream to avoid a second network
-  */
-  XFILE::CFile& file = matroskaStream.file();
-  file.Seek(0, SEEK_SET);
+  // Look for any embedded cover art
+  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(strFileName, tag, art);
 
-  auto cfile_read = [](void* h, uint8_t* buf, int size) -> int
-  { return static_cast<XFILE::CFile*>(h)->Read(buf, size); };
-  auto cfile_seek = [](void* h, int64_t pos, int whence) -> int64_t
+  // Finally, get Codec data using FFmpeg (if taglib accurate for all codecs yet v2.2.1)
+  bool haveFFmpegInfo = false;
+  musicCodecInfo codec_info;
+  haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info);
+  if (haveFFmpegInfo)
   {
-    XFILE::CFile* f = static_cast<XFILE::CFile*>(h);
-    if (whence == AVSEEK_SIZE)
-      return f->GetLength();
-    return f->Seek(pos, whence & ~AVSEEK_FORCE);
-  };
-
-  uint8_t* iobuf = static_cast<uint8_t*>(av_malloc(32768));
-  AVIOContext* ioctx = avio_alloc_context(iobuf, 32768, 0, &file, cfile_read, nullptr, cfile_seek);
-  AVFormatContext* fctx = avformat_alloc_context();
-  fctx->pb = ioctx;
-  fctx->flags |= AVFMT_FLAG_CUSTOM_IO;
-
-  if (file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
-    ioctx->seekable = 0;
-  ioctx->max_packet_size = 32768;
-
-  const AVInputFormat* iformat = nullptr;
-  av_probe_input_buffer(ioctx, &iformat, strFileName.c_str(), nullptr, 0, 0);
-
-  if (avformat_open_input(&fctx, strFileName.c_str(), iformat, nullptr) >= 0)
-  {
-    fctx->flags |= AVFMT_FLAG_NOPARSE;
-    if (avformat_find_stream_info(fctx, nullptr) >= 0)
-      SetAudioPropertiesFromFFmpeg(fctx, tag);
-
-    avformat_close_input(&fctx);
-  }
-  else
-  {
-    if (fctx)
-      avformat_close_input(&fctx);
-  }
-
-  // ioctx buffer is freed by avformat_close_input when open succeeds,
-  // but must be freed manually on failure
-  if (ioctx)
-  {
-    av_free(ioctx->buffer);
-    av_free(ioctx);
+    tag.SetBitRate(codec_info.bitRate);
+    tag.SetSampleRate(codec_info.sampleRate);
+    tag.SetBitsPerSample(codec_info.bitsPerSample);
+    tag.SetCodec(codec_info.codecName);
+    tag.SetNoOfChannels(codec_info.channels);
+    tag.SetDuration(codec_info.duration);
   }
 
   if (!tag.GetAlbum().empty() || !tag.GetTitle().empty())
@@ -359,89 +356,6 @@ void CMusicInfoTagLoaderMatroska::AddCommaDelimitedString(
   }
 }
 
-void CMusicInfoTagLoaderMatroska::SetAudioPropertiesFromFFmpeg(AVFormatContext* fctx,
-                                                               CMusicInfoTag& tag)
-{
-  if (!fctx)
-    return;
-
-  AVStream* st = nullptr;
-  std::string codec_name = "unknown";
-  int streamIndex = -1;
-
-  // Look for the default audio stream first
-  for (unsigned int i = 0; i < fctx->nb_streams; ++i)
-  {
-    if (fctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-    {
-      if (fctx->streams[i]->disposition & AV_DISPOSITION_DEFAULT)
-      {
-        streamIndex = i;
-        break;
-      }
-    }
-  }
-  // If no default stream was found, look for the first audio stream
-  if (streamIndex == -1)
-  {
-    for (unsigned int i = 0; i < fctx->nb_streams; ++i)
-    {
-      if (fctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
-      {
-        streamIndex = i;
-        break;
-      }
-    }
-  }
-  if (streamIndex > -1)
-  {
-    st = fctx->streams[streamIndex];
-    tag.SetDuration(st->duration * av_q2d(st->time_base));
-    tag.SetBitsPerSample(st->codecpar->bits_per_coded_sample);
-    tag.SetSampleRate(st->codecpar->sample_rate);
-    tag.SetBitRate(st->codecpar->bit_rate);
-    tag.SetNoOfChannels(st->codecpar->ch_layout.nb_channels);
-    codec_name = avcodec_get_name(st->codecpar->codec_id);
-    int par_profile = st->codecpar->profile;
-    if (st->codecpar->codec_id == AV_CODEC_ID_DTS)
-    {
-      switch (par_profile)
-      {
-        case FF_PROFILE_DTS_HD_MA:
-          codec_name = "dtshd_ma";
-          break;
-        case FF_PROFILE_DTS_96_24:
-          codec_name = "dts_96_24";
-          break;
-        case FF_PROFILE_DTS_HD_MA_X:
-          codec_name = "dtshd_ma_x";
-          break;
-        case FF_PROFILE_DTS_HD_MA_X_IMAX:
-          codec_name = "dtshd_ma_x_imax";
-          break;
-        case FF_PROFILE_DTS_ES:
-          codec_name = "dts_es";
-          break;
-        case FF_PROFILE_DTS_HD_HRA:
-          codec_name = "dtshd_hra";
-          break;
-        case FF_PROFILE_DTS_EXPRESS:
-          codec_name = "dts_express";
-          break;
-        default:
-          codec_name = "dca";
-          break;
-      }
-    }
-    if (st->codecpar->codec_id == AV_CODEC_ID_EAC3 && par_profile == FF_PROFILE_EAC3_DDP_ATMOS)
-      codec_name = "eac3_ddp_atmos";
-
-    if (st->codecpar->codec_id == AV_CODEC_ID_TRUEHD && par_profile == FF_PROFILE_TRUEHD_ATMOS)
-      codec_name = "truehd_atmos";
-    tag.SetCodec(codec_name);
-  }
-}
-
 
 /*!
  * Static overload for external callers (e.g. AudioBookFileDirectory).
@@ -498,8 +412,9 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     }
 
     // Read embedded cover art from attachments
-    if (coverTag)
+    /*if (coverTag)
       GetMatroskaEmbeddedCover(*matroskaFile, *coverTag, art);
+    */
 
     double fileDuration = 0.0;
     TagLib::AudioProperties* audioProps = matroskaFile->audioProperties();
@@ -510,12 +425,10 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
 
     /*!
     * First get all chapters and get the chapter name for each chapter and store
-    * it in the chapterTags map. 
+    * it in the chapterTags map. Then we have chapter name for each chapter
+    * (track) if Chapters are not tagged.
     * Micro chapters (less than 1 second long) are skipped as they are not
     * real tracks/songs — they can occur in some Matroska files as artifacts.
-    * All Editions are iterated, including synthetic editions with UID 0 that
-    * contain orphan chapters not assigned to any EditionEntry in the file.
-    * Some taggers do not assign chapters to an edition, creatingan orphan
     */
     int chapterCount = 0;
     TagLib::Matroska::Chapters* chapters = matroskaFile->chapters();
@@ -525,32 +438,35 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
           chapters->chapterEditionList();
       for (const auto& edition : editions)
       {
-        for (const auto& chapter : edition.chapterList())
+        if (edition.uid())
         {
-          // Skip micro chapters less than 1 second long
-          // Use abs to handle chapters with no end time (timeEnd returns 0 when not set)
-          long long durationNs = std::abs(static_cast<long long>(chapter.timeEnd()) -
-                                          static_cast<long long>(chapter.timeStart()));
-          if (durationNs <= 1000000000LL)
-            continue;
+          for (const auto& chapter : edition.chapterList())
+          {
+            // Skip micro chapters less than 1 second long
+            // Use abs to handle chapters with no end time (timeEnd returns 0 when not set)
+            long long durationNs = std::abs(static_cast<long long>(chapter.timeEnd()) -
+                                            static_cast<long long>(chapter.timeStart()));
+            if (durationNs <= 1000000000LL)
+              continue;
 
-          std::string chapterName;
-          if (!chapter.displayList().isEmpty())
-            chapterName = chapter.displayList().front().string().toCString(true);
+            std::string chapterName;
+            if (!chapter.displayList().isEmpty())
+              chapterName = chapter.displayList().front().string().toCString(true);
 
-          std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", chapterName}};
-          chapterTags[chapter.uid()] = chapterTagList;
+            std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", chapterName}};
+            chapterTags[chapter.uid()] = chapterTagList;
 
-          double startTimeSecs = static_cast<double>(chapter.timeStart()) * 0.000000001;
-          double endTimeSecs = static_cast<double>(chapter.timeEnd()) * 0.000000001;
-          chapterOrder.push_back(
-              std::make_tuple(chapter.uid(), chapterName, startTimeSecs, endTimeSecs));
-          chapterCount++;
+            double startTimeSecs = static_cast<double>(chapter.timeStart()) / 1000000000.0;
+            double endTimeSecs = static_cast<double>(chapter.timeEnd()) / 1000000000.0;
+            chapterOrder.push_back(
+                std::make_tuple(chapter.uid(), chapterName, startTimeSecs, endTimeSecs));
+            chapterCount++;
+          }
         }
       }
     }
 
-    /*!
+     /*!
     * Parsing Matroska tags create a dummy chapter if no chapters are present
     * to hold song tags for later processing for Kodi internal tags.
     * Some taggers like MP3tag save song tags as chapter tags with
@@ -560,14 +476,12 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     *  - use the next chapter's start time, or
     *  - use the file duration for the last chapter.
     */
-    constexpr unsigned long long FALLBACK_CHAPTER_UID = 999000999000999ULL;
+    constexpr unsigned long long DummyChapterUid = 999000999000999;
     if (chapterCount == 0)
     {
-      chapterOrder.push_back(
-          std::make_tuple(FALLBACK_CHAPTER_UID, std::string("SongTags"), 0.0, 0.0));
+      chapterOrder.push_back(std::make_tuple(DummyChapterUid, std::string("SongTags"), 0.0, 0.0));
       std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", "SongTags"}};
-      chapterTags[FALLBACK_CHAPTER_UID] = chapterTagList;
-      chapterCount = 1;
+      chapterTags[DummyChapterUid] = chapterTagList;
     }
     else
     {
@@ -671,7 +585,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
               std::end(MULTIPLE_VALUE_TAGS))
           {
             std::string currentValue = fileTags[TagName];
-            if (AppendIfNotDuplicate(currentValue, TagValue))
+            if (AppendIfNotDuplicate(currentValue, TagValue, TagName))
               fileTags[TagName] = currentValue;
           }
         }
@@ -709,7 +623,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                           TagName) != std::end(MULTIPLE_VALUE_TAGS))
             {
               std::string currentValue = fileTags[TagName];
-              if (AppendIfNotDuplicate(currentValue, TagValue))
+              if (AppendIfNotDuplicate(currentValue, TagValue, TagName))
                 fileTags[TagName] = currentValue;
             }
           }
@@ -735,7 +649,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
               if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
                             TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
-                AppendIfNotDuplicate(it->second, TagValue);
+                AppendIfNotDuplicate(it->second, TagValue, TagName);
               }
             }
           }
@@ -757,7 +671,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
               if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
                             TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
-                AppendIfNotDuplicate(it->second, TagValue);
+                AppendIfNotDuplicate(it->second, TagValue, TagName);
               }
             }
           }
@@ -777,7 +691,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                             TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
                 std::string currentValue = fileTags[TagName];
-                if (AppendIfNotDuplicate(currentValue, TagValue))
+                if (AppendIfNotDuplicate(currentValue, TagValue, TagName))
                   fileTags[TagName] = currentValue;
               }
             }

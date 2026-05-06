@@ -9,6 +9,7 @@
 #pragma once
 
 #include "ImusicInfoTagLoader.h"
+#include "music/tags/MusicCodecInfoFFmpeg.h"
 #include "KodiTagLibStream.h"
 
 #include <map>
@@ -45,14 +46,7 @@ public:
       std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
       std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder,
       CMusicInfoTag* coverTag = nullptr);
-
-  /*!
-   * \Read audio codec properties from an FFmpeg format context into a music info tag.
-   * \param fctx An open AVFormatContext with stream info already detected.
-   * \param tag  CMusicInfoTag to receive the audio properties.
-   */
-  static void SetAudioPropertiesFromFFmpeg(AVFormatContext* fctx, CMusicInfoTag& tag);
-
+   
 private:
   // Internal overload used by Load() — reuses an already-open stream
   static void GetMatroskaMusicTags(
@@ -71,4 +65,4 @@ private:
                                       const std::vector<std::string>& separators,
                                       CMusicInfoTag& musictag);
 };
-} 
+} // namespace MUSIC_INFO

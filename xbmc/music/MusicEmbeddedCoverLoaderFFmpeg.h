@@ -8,8 +8,11 @@
 
 #pragma once
 
+#include <string>
+
 struct AVFormatContext;
 class EmbeddedArt;
+
 
 namespace MUSIC_INFO
 {
@@ -34,6 +37,15 @@ public:
  * \param art Class containing embedded art details (if available)
  */
   static void GetEmbeddedCover(AVFormatContext* fctx,
+                               CMusicInfoTag& tag,
+                               EmbeddedArt* art = nullptr);
+
+  /*!
+   *  Convenience overload that opens the file via FFmpeg internally.
+   *  Use when the caller does not already have an AVFormatContext (e.g. the
+   *  Matroska TagLib loader). Returns false if the file could not be opened.
+   */
+  static bool GetEmbeddedCover(const std::string& strFileName,
                                CMusicInfoTag& tag,
                                EmbeddedArt* art = nullptr);
 };
