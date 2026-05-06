@@ -44,7 +44,7 @@ using namespace XFILE;
 using namespace TagLib;
 
 /*!
- * \brief Read embedded cover art from a Matroska file's attachments via TagLib.
+ * brief Read embedded cover art from a Matroska file's attachments via TagLib.
  *
  * Matroska stores cover art as attached files. This searches for the first
  * attachment with a supported image MIME type (image/jpeg, image/png, image/bmp).
@@ -83,14 +83,12 @@ namespace
 {
 const std::vector<std::string> SupportedArtistMultiValueSeparators = {";", "|"};
 const std::vector<std::string> SupportedMultiValueSeparators       = {";", "/", "|", ","};
-} // namespace
+} 
 
-/*!
- * Helper function to append " | " + newValue to currentValue if newValue is not
- * already present(case-insensitive) in existing delimited values. The set of 
- * delimiters used to split depends on whether tagname refers to an artist tag.
- * Returns true if the value was appended, false otherwise.
- */
+// Appends " | " + newValue to currentValue if newValue is not already present
+// (case-insensitive) among the existing delimited values. The set of delimiters
+// used to split currentValue depends on whether tagname refers to an artist tag.
+// Returns true if the value was appended, false otherwise.
 static bool AppendIfNotDuplicate(std::string& currentValue,
                                  const std::string& newValue,
                                  const std::string& tagname)
@@ -171,7 +169,7 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
     }
   }
 
-    // Look for any embedded cover art
+  // Look for any embedded cover art
   CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(strFileName, tag, art);
 
   // Get Codec data using FFmpeg (if taglib accurate for all codecs yet v2.2.1)
@@ -563,26 +561,30 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     * Pass 2: Process file-level (targetTypeValue == 0) and chapter/song
     *         (targetTypeValue == 30) tags.
     */
-
+    std::string TagName;
+    std::string TagValue;
     const TagLib::Matroska::SimpleTagsList& list = matroskatag->simpleTagsList();
-
     // Pass 1: Process album-level tags (targetTypeValue == 50)
     for (const TagLib::Matroska::SimpleTag& tag : list)
     {
       if (tag.targetTypeValue() == 50 || tag.targetTypeValue() == 60)
       {
-        std::string TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
-        // TITLE with targetTypeValue 50 is the Album title in Matroska spec
+        TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
+        TagValue = tag.toString().to8Bit(true);
+        /*!
+        * TITLE with targetTypeValue 50 is the Album title in Matroska spec
+        * ALBUM was used in Kodi 21.3 for ffmpeg tag reding compatibility
+        */
         if (TagName == "TITLE")
         {
           if (fileTags.find("ALBUM") == fileTags.end())
-            fileTags["ALBUM"] = tag.toString().to8Bit(true);
+            fileTags["ALBUM"] = TagValue;
           if (fileTags.find("TITLE") == fileTags.end())
-            fileTags["TITLE"] = tag.toString().to8Bit(true);
+            fileTags["TITLE"] = TagValue;
         }
         else if (fileTags.find(TagName) == fileTags.end())
         {
-          fileTags[TagName] = tag.toString().to8Bit(true);
+          fileTags[TagName] = TagValue;
         }
         else
         {
@@ -590,7 +592,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
               std::end(MULTIPLE_VALUE_TAGS))
           {
             std::string currentValue = fileTags[TagName];
-            if (AppendIfNotDuplicate(currentValue, tag.toString().to8Bit(true), TagName))
+            if (AppendIfNotDuplicate(currentValue, TagValue, TagName))
               fileTags[TagName] = currentValue;
           }
         }
@@ -605,23 +607,24 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
       unsigned long long targetTypeValue = tag.targetTypeValue();
 
       if (targetTypeValue == 50 || targetTypeValue == 60)
-      {
         continue; // already processed in Pass 1
-      }
+     
+      TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
+      TagValue = tag.toString().to8Bit(true);
       if (targetTypeValue == 0)
       {
         if (TagName == "TITLE")
         {
           if (fileTags.find("ALBUM") == fileTags.end())
-            fileTags["ALBUM"] = tag.toString().to8Bit(true);
+            fileTags["ALBUM"] = TagValue;
           if (fileTags.find("TITLE") == fileTags.end())
-            fileTags["TITLE"] = tag.toString().to8Bit(true);
+            fileTags["TITLE"] = TagValue;
         }
         else
         {
           if (fileTags.find(TagName) == fileTags.end())
           {
-            fileTags[TagName] = tag.toString().to8Bit(true);
+            fileTags[TagName] = TagValue;
           }
           else
           {
@@ -629,7 +632,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                           TagName) != std::end(MULTIPLE_VALUE_TAGS))
             {
               std::string currentValue = fileTags[TagName];
-              if (AppendIfNotDuplicate(currentValue, tag.toString().to8Bit(true), TagName))
+              if (AppendIfNotDuplicate(currentValue, TagValue, TagName))
                 fileTags[TagName] = currentValue;
             }
           }
@@ -648,14 +651,14 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
             auto it = chapterTagList.find(TagName);
             if (it == chapterTagList.end())
             {
-              chapterTagList.emplace(TagName, tag.toString().to8Bit(true));
+              chapterTagList.emplace(TagName, TagValue);
             }
             else
             {
               if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
                             TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
-                AppendIfNotDuplicate(it->second, tag.toString().to8Bit(true), TagName);
+                AppendIfNotDuplicate(it->second, TagValue, TagName);
               }
             }
           }
@@ -670,14 +673,14 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
             auto it = chapterTagList.find(TagName);
             if (it == chapterTagList.end())
             {
-              chapterTagList.emplace(TagName, tag.toString().to8Bit(true));
+              chapterTagList.emplace(TagName, TagValue);
             }
             else
             {
               if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
                             TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
-                AppendIfNotDuplicate(it->second, tag.toString().to8Bit(true), TagName);
+                AppendIfNotDuplicate(it->second, TagValue, TagName);
               }
             }
           }
@@ -686,7 +689,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
             // so this chapter was not in the Chapters element. Fall back to fileTags.
             if (fileTags.find(TagName) == fileTags.end())
             {
-              fileTags[TagName] = tag.toString().to8Bit(true);
+              fileTags[TagName] = TagValue;
             }
             else
             {
@@ -694,7 +697,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                             TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
                 std::string currentValue = fileTags[TagName];
-                if (AppendIfNotDuplicate(currentValue, tag.toString().to8Bit(true), TagName))
+                if (AppendIfNotDuplicate(currentValue, TagValue, TagName))
                   fileTags[TagName] = currentValue;
               }
             }
