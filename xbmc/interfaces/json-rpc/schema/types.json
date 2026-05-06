@@ -1440,10 +1440,12 @@
         "originaldate",
         "bpm",
         "samplerate",
+        "bitspersample",
         "bitrate",
         "channels",
         "datemodified",
         "datenew",
+        "albumduration",
         "songvideourl"
       ]
     }
@@ -1700,6 +1702,21 @@
       },
       "albumduration": {
         "type": "integer"
+      },
+      "codec": {
+        "type": "string"
+      },
+      "channels": {
+        "type": "integer"
+      },
+      "samplerate": {
+        "type": "integer"
+      },
+      "bitspersample": {
+        "type": "integer"
+      },
+      "bitrate": {
+        "type": "Integer"
       }
     }
   },
@@ -1788,11 +1805,17 @@
       "samplerate": {
         "type": "Integer"
       },
+      "bitspersample": {
+        "type": "integer"
+      },
       "bitrate": {
         "type": "Integer"
       },
       "channels": {
         "type": "Integer"
+      },
+      "codec": {
+        "type": "string"
       },
       "songvideourl": {
         "type": "string"

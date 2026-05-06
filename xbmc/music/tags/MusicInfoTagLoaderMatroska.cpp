@@ -79,14 +79,49 @@ static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
   }
 }
 
-// Helper to append a new value to an existing tag value with " / " separator, but only if it's not already present
-static bool AppendIfNotDuplicate(std::string& currentValue, const std::string& newValue)
+namespace
 {
-  if (currentValue == newValue ||
-      currentValue.find("/ " + newValue) != std::string::npos ||
-      currentValue.find(newValue + " /") != std::string::npos)
+const std::vector<std::string> SupportedArtistMultiValueSeparators = {";", "|"};
+const std::vector<std::string> SupportedMultiValueSeparators       = {";", "/", "|", ","};
+} // namespace
+
+// Appends " / " + newValue to currentValue if newValue is not already present
+// (case-insensitive) among the existing delimited values. The set of delimiters
+// used to split currentValue depends on whether tagname refers to an artist tag.
+// Returns true if the value was appended, false otherwise.
+static bool AppendIfNotDuplicate(std::string& currentValue,
+                                 const std::string& newValue,
+                                 const std::string& tagname)
+{
+  const std::vector<std::string>& separators =
+      (tagname.find("ARTIST") != std::string::npos)
+          ? SupportedArtistMultiValueSeparators
+          : SupportedMultiValueSeparators;
+
+  try
+  {
+    std::vector<std::string> existingValues = StringUtils::Split(currentValue, separators);
+
+    for (auto& existing : existingValues)
+    {
+      StringUtils::Trim(existing);
+      if (existing.empty())
+        continue; // mirrors RemoveEmptyEntries
+      if (StringUtils::EqualsNoCase(existing, newValue))
+        return false;
+    }
+  }
+  catch (const std::exception& ex)
+  {
+    CLog::Log(LOGERROR, "AppendIfNotDuplicate: {}", ex.what());
     return false;
-  currentValue += " / " + newValue;
+  }
+
+  if (currentValue.empty())
+    currentValue = newValue;
+  else
+    currentValue += " | " + newValue;
+
   return true;
 }
 
@@ -553,7 +588,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
               std::end(MULTIPLE_VALUE_TAGS))
           {
             std::string currentValue = fileTags[TagName];
-            if (AppendIfNotDuplicate(currentValue, tag.toString().to8Bit(true)))
+            if (AppendIfNotDuplicate(currentValue, tag.toString().to8Bit(true), TagName))
               fileTags[TagName] = currentValue;
           }
         }
@@ -592,7 +627,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                           TagName) != std::end(MULTIPLE_VALUE_TAGS))
             {
               std::string currentValue = fileTags[TagName];
-              if (AppendIfNotDuplicate(currentValue, tag.toString().to8Bit(true)))
+              if (AppendIfNotDuplicate(currentValue, tag.toString().to8Bit(true), TagName))
                 fileTags[TagName] = currentValue;
             }
           }
@@ -618,7 +653,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
               if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
                             TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
-                AppendIfNotDuplicate(it->second, tag.toString().to8Bit(true));
+                AppendIfNotDuplicate(it->second, tag.toString().to8Bit(true), TagName);
               }
             }
           }
@@ -640,7 +675,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
               if (std::find(std::begin(MULTIPLE_VALUE_TAGS), std::end(MULTIPLE_VALUE_TAGS),
                             TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
-                AppendIfNotDuplicate(it->second, tag.toString().to8Bit(true));
+                AppendIfNotDuplicate(it->second, tag.toString().to8Bit(true), TagName);
               }
             }
           }
@@ -657,7 +692,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
                             TagName) != std::end(MULTIPLE_VALUE_TAGS))
               {
                 std::string currentValue = fileTags[TagName];
-                if (AppendIfNotDuplicate(currentValue, tag.toString().to8Bit(true)))
+                if (AppendIfNotDuplicate(currentValue, tag.toString().to8Bit(true), TagName))
                   fileTags[TagName] = currentValue;
               }
             }

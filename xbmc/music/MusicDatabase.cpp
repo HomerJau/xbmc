@@ -7287,7 +7287,12 @@ const std::array<TranslateJSONField, 35> JSONtoDBAlbum = {{
   { "originaldate",              "string", true,  "strOrigReleaseDate",     "" },
   { "releasedate",               "string", true,  "strReleaseDate",         "" },
   { "albumstatus",               "string", true,  "strReleaseStatus",       "" },
-  { "albumduration",             "integer", true,  "iAlbumDuration",        "" },
+  { "albumduration",            "integer", true,  "iAlbumDuration",         "" },
+  { "codec",                     "string", true,  "strCodec",               "" },   // Scalar subquery in view
+  { "channels",                 "integer", true,  "iChannels",              "" },   // Scalar subquery in view
+  { "samplerate",               "integer", true,  "iSampleRate",            "" },   // Scalar subquery in view
+  { "bitspersample",            "integer", true,  "iBitsPerSample",         "" },   // Scalar subquery in view
+  { "bitrate",                  "integer", true,  "iBitRate",               "" },   // Scalar subquery in view
   // Scalar subquery fields
   { "year",                     "integer", true,  "iYear",                  "CAST(<datefield> AS INTEGER) AS iYear" }, //From strReleaseDate or strOrigReleaseDate
   { "sourceid",                  "string", true,  "sourceid",               "(SELECT GROUP_CONCAT(album_source.idSource SEPARATOR '; ') FROM album_source WHERE album_source.idAlbum = albumview.idAlbum) AS sources" },
@@ -7691,7 +7696,9 @@ const std::array<TranslateJSONField, 54> JSONtoDBSong = {{
   { "releasedate",              "string" , true,  "song.strReleaseDate",    "" },
   { "bitrate",                  "integer", true,  "iBitRate",               "" },
   { "samplerate",               "integer", true,  "iSampleRate",            "" },
+  { "bitspersample",            "integer", true,  "iBitsPerSample",         "" },
   { "channels",                 "integer", true,  "iChannels",              "" },
+  { "codec",                     "string", true,  "strCodec",               "" },
   { "songvideourl",              "string", true,  "strVideoURL",            "" },
 
   // JOIN fields (multivalue), same order as _JoinToSongFields
