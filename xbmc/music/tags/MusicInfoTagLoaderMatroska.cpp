@@ -85,10 +85,12 @@ const std::vector<std::string> SupportedArtistMultiValueSeparators = {";", "|"};
 const std::vector<std::string> SupportedMultiValueSeparators       = {";", "/", "|", ","};
 } // namespace
 
-// Appends " / " + newValue to currentValue if newValue is not already present
-// (case-insensitive) among the existing delimited values. The set of delimiters
-// used to split currentValue depends on whether tagname refers to an artist tag.
-// Returns true if the value was appended, false otherwise.
+/*!
+ * Helper function to append " | " + newValue to currentValue if newValue is not
+ * already present(case-insensitive) in existing delimited values. The set of 
+ * delimiters used to split depends on whether tagname refers to an artist tag.
+ * Returns true if the value was appended, false otherwise.
+ */
 static bool AppendIfNotDuplicate(std::string& currentValue,
                                  const std::string& newValue,
                                  const std::string& tagname)
