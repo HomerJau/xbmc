@@ -25,10 +25,8 @@ namespace XFILE
       bool Exists(const CURL& url) override;
       bool ContainsFiles(const CURL& url) override;
       bool IsAllowed(const CURL& url) const override { return true; }
-
       /*!
-       * \brief Check if a file already has multiple chapter/song records in the music DB.
-       *
+       * Check if a file already has multiple chapter/song records in the music DB.
        * Used by CFileDirectoryFactory to short-circuit the expensive file parse
        * during playback. If the file is already scanned, there is no need to
        * create an AudioBookFileDirectory or open the file at all.
@@ -45,16 +43,5 @@ namespace XFILE
 
     private:
       static int GetSongCountFromDatabase(const CURL& url);
-
-      /*!
-       * \brief Ensure the FFmpeg format context (m_fctx) is open for codec info.
-       *
-       * If ContainsFiles() used the DB fast path, m_fctx will be null.
-       * This opens it on demand so GetDirectory() can read codec parameters.
-       *
-       * \param url The file URL to open.
-       * \return true if m_fctx is ready for use.
-       */
-      bool EnsureFFmpegContext(const CURL& url);
   };
 }

@@ -8,24 +8,28 @@
 #include "AudioBookFileDirectory.h"
 
 #include "FileItem.h"
+#include "FileItemList.h"
 #include "TextureDatabase.h"
 #include "URL.h"
 #include "Util.h"
+#include "filesystem/File.h"
 #include "cores/FFmpeg.h"
 #include "guilib/LocalizeStrings.h"
 #include "music/MusicDatabase.h"
 #include "music/tags/KodiTagLibStream.h"
+#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
+#include "music/tags/MusicCodecInfoFFmpeg.h"
 #include "music/tags/MusicInfoTagLoaderMatroska.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
 #include "utils/URIUtils.h"
 #include "utils/log.h"
 #include "utils/StringUtils.h"
-
-#include <taglib/mp4file.h>
-#include <taglib/mp4tag.h>
-#include <taglib/tpropertymap.h>
-#include <taglib/tvariant.h>
+//
+//#include <taglib/mp4file.h>
+//#include <taglib/mp4tag.h>
+//#include <taglib/tpropertymap.h>
+//#include <taglib/tvariant.h>
 
 #include <map>
 #include <tuple>
@@ -35,132 +39,19 @@
 using namespace XFILE;
 using namespace MUSIC_INFO;
 
-static int cfile_file_read(void *h, uint8_t* buf, int size)
+static int cfile_file_read(void* h, uint8_t* buf, int size)
 {
   CFile* pFile = static_cast<CFile*>(h);
   return pFile->Read(buf, size);
 }
 
-static int64_t cfile_file_seek(void *h, int64_t pos, int whence)
+static int64_t cfile_file_seek(void* h, int64_t pos, int whence)
 {
   CFile* pFile = static_cast<CFile*>(h);
-  if(whence == AVSEEK_SIZE)
+  if (whence == AVSEEK_SIZE)
     return pFile->GetLength();
   else
     return pFile->Seek(pos, whence & ~AVSEEK_FORCE);
-}
-
-/*!
- * \brief Chapter data extracted from an MP4/M4B file via TagLib.
- */
-struct Mp4Chapter
-{
-  std::string title;
-  double startSecs{0.0};
-  double endSecs{0.0};
-};
-
-/*!
- * \brief Embedded cover art info extracted from an MP4/M4B file via TagLib.
- */
-struct Mp4CoverArt
-{
-  bool found{false};
-  size_t size{0};
-  std::string mimeType;
-};
-
-/*!
- * Read M4B chapters and embedded cover art using TagLib.
- */
-static bool ReadMp4TagLib(const std::string& fileName,
-                          std::vector<Mp4Chapter>& chapters,
-                          Mp4CoverArt& coverArt)
-{
-  chapters.clear();
-  coverArt = {};
-
-  KodiTagLibStream stream(fileName);
-  if (!stream.open())
-    return false;
-
-  TagLib::MP4::File mp4File(&stream);
-  if (!mp4File.isValid())
-    return false;
-
-  TagLib::MP4::Tag* mp4tag = mp4File.tag();
-  if (!mp4tag)
-    return false;
-
-  // --- Read chapters ---
-  auto chapterList = mp4tag->complexProperties("CHAPTER");
-  if (!chapterList.isEmpty())
-  {
-    for (const auto& chapterMap : chapterList)
-    {
-      Mp4Chapter ch;
-
-      auto titleIt = chapterMap.find("TITLE");
-      if (titleIt != chapterMap.end())
-        ch.title = titleIt->second.toString().toCString(true);
-
-      auto startIt = chapterMap.find("START_TIME");
-      if (startIt != chapterMap.end())
-        ch.startSecs = static_cast<double>(startIt->second.toLongLong()) / 1000.0;
-
-      auto endIt = chapterMap.find("END_TIME");
-      if (endIt != chapterMap.end())
-        ch.endSecs = static_cast<double>(endIt->second.toLongLong()) / 1000.0;
-
-      chapters.push_back(ch);
-    }
-
-    // If TagLib didn't provide end times, compute them from the next chapter's start
-    for (size_t i = 0; i + 1 < chapters.size(); ++i)
-    {
-      if (chapters[i].endSecs <= 0.0)
-        chapters[i].endSecs = chapters[i + 1].startSecs;
-    }
-
-    CLog::Log(LOGDEBUG, "ReadMp4TagLib: found {} chapters via TagLib for {}", chapters.size(),
-               fileName);
-  }
-  else
-  {
-    CLog::Log(LOGDEBUG, "ReadMp4TagLib: no chapters found via TagLib for {}", fileName);
-  }
-
-  // --- Read embedded cover art ---
-  auto pictureList = mp4tag->complexProperties("PICTURE");
-  if (!pictureList.isEmpty())
-  {
-    const auto& pictureMap = pictureList.front();
-
-    auto dataIt = pictureMap.find("data");
-    auto mimeIt = pictureMap.find("mimeType");
-
-    if (dataIt != pictureMap.end())
-    {
-      coverArt.size = dataIt->second.toByteVector().size();
-
-      if (mimeIt != pictureMap.end())
-        coverArt.mimeType = mimeIt->second.toString().toCString(true);
-      else
-      {
-        // Fallback: infer MIME type from the data if not provided
-        coverArt.mimeType = "image/jpeg";
-      }
-
-      if (coverArt.size > 0)
-      {
-        coverArt.found = true;
-        CLog::Log(LOGDEBUG, "ReadMp4TagLib: found embedded cover art ({} bytes, {}) for {}",
-                   coverArt.size, coverArt.mimeType, fileName);
-      }
-    }
-  }
-
-  return true;
 }
 
 CAudioBookFileDirectory::~CAudioBookFileDirectory(void)
@@ -174,54 +65,10 @@ CAudioBookFileDirectory::~CAudioBookFileDirectory(void)
   }
 }
 
-bool CAudioBookFileDirectory::EnsureFFmpegContext(const CURL& url)
-{
-  if (m_fctx)
-    return true; // already open
-
-  if (!m_file.Open(url))
-    return false;
-
-  uint8_t* buffer = (uint8_t*)av_malloc(32768);
-  m_ioctx = avio_alloc_context(buffer, 32768, 0, &m_file, cfile_file_read, nullptr, cfile_file_seek);
-
-  m_fctx = avformat_alloc_context();
-  m_fctx->pb = m_ioctx;
-  m_fctx->flags |= AVFMT_FLAG_CUSTOM_IO;
-
-  if (m_file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
-    m_ioctx->seekable = 0;
-
-  m_ioctx->max_packet_size = 32768;
-
-  const AVInputFormat* iformat = nullptr;
-  av_probe_input_buffer(m_ioctx, &iformat, url.Get().c_str(), nullptr, 0, 0);
-
-  if (avformat_open_input(&m_fctx, url.Get().c_str(), iformat, nullptr) < 0)
-  {
-    if (m_fctx)
-      avformat_close_input(&m_fctx);
-    av_free(m_ioctx->buffer);
-    av_free(m_ioctx);
-    m_ioctx = nullptr;
-    return false;
-  }
-  m_fctx->flags |= AVFMT_FLAG_NOPARSE;
-  int err = avformat_find_stream_info(m_fctx, NULL);
-  if (err < 0)
-    CLog::Log(LOGERROR, "Can't detect codec info in file {}", url.GetRedacted());
-
-  return true;
-}
 
 bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items)
 {
   if (!m_fctx && !ContainsFiles(url))
-    return true;
-
-  // Ensure FFmpeg context is available for codec info — may not be open
-  // if ContainsFiles() used the DB fast path
-  if (!EnsureFFmpegContext(url))
     return true;
 
   std::string title;
@@ -230,31 +77,18 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   std::string desc;
 
   std::vector<std::string> separators{" feat. ", " ft. ", " Feat. ", " Ft. ",  ";", ":",
-                                      "|", "#", "/", " with ", "&"};
+                                      "|",       "#",     "/",       " with ", "&"};
   const std::string musicsep =
       CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_musicItemSeparator;
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
     separators.push_back(musicsep); // add custom music separator from as.xml
 
+  // FIX: Guard streams[0] access — crash if file has no streams
+  const int end_time_m4b_file = (m_fctx->nb_streams > 0) ? m_fctx->streams[0]->duration *
+                                                               av_q2d(m_fctx->streams[0]->time_base)
+                                                         : 0;
+
   const bool isAudioBook = url.IsFileType("m4b");
-
-  // For M4B files, read chapters and cover art via TagLib (no FFmpeg needed)
-  std::vector<Mp4Chapter> mp4Chapters;
-  Mp4CoverArt mp4CoverArt;
-  if (isAudioBook)
-  {
-    ReadMp4TagLib(url.Get(), mp4Chapters, mp4CoverArt);
-
-    // Set the last chapter's end time from the FFmpeg stream duration if needed
-    if (!mp4Chapters.empty() && mp4Chapters.back().endSecs <= 0.0)
-    {
-      double endTimeSecs = 0.0;
-      if (m_fctx->nb_streams > 0)
-        endTimeSecs = m_fctx->streams[0]->duration * av_q2d(m_fctx->streams[0]->time_base);
-      mp4Chapters.back().endSecs = endTimeSecs;
-    }
-  }
-
   // Some tags are relevant to the whole album - these are read first
   CMusicInfoTag albumtag;
 
@@ -279,9 +113,8 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
   if (!isAudioBook)
   {
-    // Pass &albumtag so GetMatroskaMusicTags reads embedded cover art too
     CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags,
-                                                      chapterOrder, &albumtag);
+                                                      chapterOrder);
     if (fileTags.empty())
       return true;
     /*!
@@ -292,101 +125,68 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
       CMusicInfoTagLoaderMatroska::ParseTag(t.first, t.second, separators, musicsep, albumtag);
   }
 
-  // Determine chapter count — from TagLib for both M4B and Matroska
-  const unsigned int chapterCount =
-      isAudioBook ? static_cast<unsigned int>(mp4Chapters.size())
-                  : static_cast<unsigned int>(chapterOrder.size());
-
   std::string thumb;
-  if (chapterCount > 1)
-    thumb = CTextureUtils::GetWrappedImageURL(url.Get(), "music");
+  thumb = IMAGE_FILES::URLFromFile(url.Get(), "music");
+  // Look for any embedded cover art
+  CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(m_fctx, albumtag);
 
-  // Embedded cover art — TagLib for M4B (already read above),
-  // TagLib for Matroska (read inside GetMatroskaMusicTags above)
-  if (isAudioBook && mp4CoverArt.found)
-    albumtag.SetCoverArtInfo(mp4CoverArt.size, mp4CoverArt.mimeType);
-
- // Read audio codec properties (bits per sample, sample rate, codec name etc.)
-  CMusicInfoTagLoaderMatroska::SetAudioPropertiesFromFFmpeg(m_fctx, albumtag);
-
-  bool chapter_error = false;
-  for (unsigned int i = 0; i < chapterCount; ++i)
+ // now get the AudioCodec etc for QQ Kodi-------------------------------------
+  bool haveFFmpegInfo = false;
+  musicCodecInfo codec_info;
+  haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(url.Get(), codec_info);
+  if (haveFFmpegInfo) // use data from FFmpeg (taglib 2.2.1 does not support some codecs)
   {
-    double chapterStartSecs;
-    double chapterEndSecs;
-    std::string chaptitle = StringUtils::Format(g_localizeStrings.Get(25010), i + 1);
+    albumtag.SetBitRate(codec_info.bitRate);
+    albumtag.SetSampleRate(codec_info.sampleRate);
+    albumtag.SetBitsPerSample(codec_info.bitsPerSample);
+    albumtag.SetCodec(codec_info.codecName);
+    albumtag.SetNoOfChannels(codec_info.channels);
+    albumtag.SetDuration(codec_info.duration);
+  }
 
-    if (isAudioBook)
-    {
-      // Chapter data comes from TagLib (MP4)
-      chapterStartSecs = mp4Chapters[i].startSecs;
-      chapterEndSecs = mp4Chapters[i].endSecs;
-
-      if (!mp4Chapters[i].title.empty())
-        chaptitle = mp4Chapters[i].title;
-    }
-    else
-    {
-      // Chapter data comes from TagLib (Matroska) via chapterOrder
-      chapterStartSecs = std::get<2>(chapterOrder[i]);
-      chapterEndSecs = std::get<3>(chapterOrder[i]);
-
-      if (!std::get<1>(chapterOrder[i]).empty())
-        chaptitle = std::get<1>(chapterOrder[i]);
-    }
-
-    // FIX: Check chapter duration (end - start), not just end time.
-    // A tiny chapter at the 2-hour mark would have a large end time and pass
-    // the old filter. Checking duration catches it correctly.
-    double chapterDuration = chapterEndSecs - chapterStartSecs;
-    if (chapterDuration > 0 && chapterDuration < 1.0)
+  float chapter_size = 0;
+  bool chapter_error = false;
+  for (unsigned int i = 0; i < m_fctx->nb_chapters; ++i)
+  {
+    if (m_fctx->chapters[i]->start < 0) // negative start time, ignore it
+      continue;
+    chapter_size = m_fctx->chapters[i]->end * av_q2d(m_fctx->chapters[i]->time_base);
+    if (chapter_size < 1 && chapter_size > 0) // Chapter must have positive time of more than 1 sec
     {
       CLog::Log(LOGWARNING,
-                "CAudioBookFileDirectory: Tiny chapter of duration {}s detected when scanning {} "
-                "Most likely this file needs the chapters correcting",
-                chapterDuration, url.GetRedacted());
+                "CAudioBookFileDirectory: Tiny chapter of size {}s detected when scanning {} Most "
+                "likely this file needs the chapters correcting",
+                chapter_size, url.GetRedacted());
       chapter_error = true;
       continue;
     }
 
-    std::shared_ptr<CFileItem> item(new CFileItem(url.Get(), false));
-    if (isAudioBook)
-      item->SetMimeType("audio/x-m4b");
-    else if (url.IsFileType("mka"))
-      item->SetMimeType("audio/x-matroska");
-    else
-      item->SetMimeType("video/x-matroska");
-    *item->GetMusicInfoTag() = albumtag;
+    tag = nullptr;
+    std::string chaptitle = StringUtils::Format(
+        CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25010), i + 1);
+    std::string chapauthor;
+    std::string chapalbum;
 
+    std::shared_ptr<CFileItem> item(new CFileItem(url.Get(), false));
+    *item->GetMusicInfoTag() = albumtag;
+ 
     if (isAudioBook)
     {
+      while ((tag = av_dict_get(m_fctx->chapters[i]->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
+      {
+        if (StringUtils::CompareNoCase(tag->key, "title") == 0)
+           chaptitle = tag->value;
+        else if (StringUtils::CompareNoCase(tag->key, "artist") == 0)
+           chapauthor = tag->value;
+        else if (StringUtils::CompareNoCase(tag->key, "album") == 0)
+           chapalbum = tag->value;
+      }
       item->GetMusicInfoTag()->SetTitle(chaptitle);
-      item->GetMusicInfoTag()->SetAlbum(album.empty() ? title : album);
-      item->GetMusicInfoTag()->SetArtist(author);
+      item->GetMusicInfoTag()->SetAlbum(chapalbum.empty() ? album.empty() ? title : album
+                                                          : chapalbum);
+      item->GetMusicInfoTag()->SetArtist(chapauthor.empty() ? author : chapauthor);
       if (!desc.empty())
         item->GetMusicInfoTag()->SetComment(desc);
-
-      item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(chapterStartSecs));
-      int64_t endOffset;
-      if (chapterEndSecs > 0.0)
-      {
-        endOffset = CUtil::ConvertSecsToMilliSecs(chapterEndSecs);
-      }
-      else if (i + 1 < mp4Chapters.size())
-      {
-        endOffset = CUtil::ConvertSecsToMilliSecs(mp4Chapters[i + 1].startSecs);
-      }
-      else
-      {
-        // Fallback: use stream duration from FFmpeg
-        double endTimeSecs = 0.0;
-        if (m_fctx->nb_streams > 0)
-          endTimeSecs = m_fctx->streams[0]->duration * av_q2d(m_fctx->streams[0]->time_base);
-        endOffset = CUtil::ConvertSecsToMilliSecs(endTimeSecs);
-      }
-      item->SetEndOffset(endOffset);
-      item->GetMusicInfoTag()->SetDuration(
-          CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
     }
     else
     {
@@ -397,23 +197,45 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
         if (it != chapterTags.end())
         {
           for (const auto& Tracktag : it->second)
-            CMusicInfoTagLoaderMatroska::ParseTag(Tracktag.first, Tracktag.second, separators,
-                                                  musicsep, *item->GetMusicInfoTag());
+            CMusicInfoTagLoaderMatroska::ParseTag(Tracktag.first,
+                                                   Tracktag.second,
+                                                   separators,
+                                                   musicsep,
+                                                   *item->GetMusicInfoTag());
+
+          item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(std::get<2>(chapterOrder[i])));
+          item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(std::get<3>(chapterOrder[i])));
+          item->GetMusicInfoTag()->SetDuration(
+              CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
         }
       }
-
-      item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(chapterStartSecs));
-      item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(chapterEndSecs));
-      item->GetMusicInfoTag()->SetDuration(
-          CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
     }
-
+ 
     item->GetMusicInfoTag()->SetTrackNumber(i + 1);
     item->GetMusicInfoTag()->SetLoaded(true);
 
     item->SetLabel(StringUtils::Format("{0:02}. {1} - {2}", i + 1,
-                                       item->GetMusicInfoTag()->GetAlbum(),
-                                       item->GetMusicInfoTag()->GetTitle()));
+                                         item->GetMusicInfoTag()->GetAlbum(),
+                                         item->GetMusicInfoTag()->GetTitle()));
+    //item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->start *
+    //                                                     av_q2d(m_fctx->chapters[i]->time_base)));
+    //item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->end *
+    //                                                   av_q2d(m_fctx->chapters[i]->time_base)));
+    //if (item->GetEndOffset() < 0 ||
+    //    item->GetEndOffset() > CUtil::ConvertMilliSecsToSecs(m_fctx->duration))
+    //{
+    //  if (i < m_fctx->nb_chapters - 1)
+    //    item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(
+    //        m_fctx->chapters[i + 1]->start * av_q2d(m_fctx->chapters[i + 1]->time_base)));
+    //  else
+    //  {
+    //    item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(end_time_mka_file)); // mka file
+    //    if (item->GetEndOffset() < 0)
+    //      item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(end_time_m4b_file)); // m4b file
+    //  }
+    //}
+    //item->GetMusicInfoTag()->SetDuration(
+    //    CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
 
     item->SetProperty("item_start", item->GetStartOffset());
     item->SetProperty("audio_bookmark", item->GetStartOffset());
@@ -424,23 +246,6 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   return true;
 }
 
-bool CAudioBookFileDirectory::Exists(const CURL& url)
-{
-  // Fast path: check the music database to avoid any file I/O.
-  // During playback this is called frequently (e.g. from IsAudioBook()),
-  // so it must be fast and must not open the actual media file.
-  int dbSongCount = GetSongCountFromDatabase(url);
-  if (dbSongCount > 1)
-    return true;
-  if (dbSongCount >= 0)
-    return false; // 0 or 1 songs — not a multi-chapter audiobook
-
-  // DB unavailable (-1). Return false to avoid blocking playback.
-  // The file will be properly detected during library scan when the DB
-  // is available. Returning true here risks triggering GetDirectory()
-  // which opens more file/DB handles and can deadlock during playback.
-  return false;
-}
 
 int CAudioBookFileDirectory::GetSongCountFromDatabase(const CURL& url)
 {
@@ -462,38 +267,45 @@ int CAudioBookFileDirectory::GetSongCountFromDatabase(const CURL& url)
   return (count >= 0) ? count : -1;
 }
 
-bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
+
+bool CAudioBookFileDirectory::Exists(const CURL& url)
 {
-  // Fast path: check the music database first — avoids opening the file entirely
-  // when it has already been scanned into the library
+  // Fast path: check the music database to avoid any file I/O.
+  // During playback this is called frequently (e.g. from IsAudioBook()),
+  // so it must be fast and must not open the actual media file.
   int dbSongCount = GetSongCountFromDatabase(url);
   if (dbSongCount > 1)
-  {
-    CLog::Log(LOGDEBUG, "CAudioBookFileDirectory::ContainsFiles: DB fast path — {} songs for {}",
-              dbSongCount, url.GetRedacted());
     return true;
-  }
-  else if (dbSongCount == 1)
-  {
-    CLog::Log(LOGDEBUG,
-              "CAudioBookFileDirectory::ContainsFiles: DB fast path — single song for {}",
-              url.GetRedacted());
-    return false;
-  }
+  if (dbSongCount >= 0)
+    return false; // 0 or 1 songs — not a multi-chapter audiobook
 
-  // Slow path: file not in database — open via FFmpeg and check chapter count.
-  // m_fctx is kept open for GetDirectory() to reuse for codec info.
-  if (!m_file.Open(url))
+  // DB unavailable (-1). Return false to avoid blocking playback.
+  // The file will be properly detected during library scan when the DB
+  // is available. Returning true here risks triggering GetDirectory()
+  // which opens more file/DB handles and can deadlock during playback.
+  return false;
+}
+
+bool CAudioBookFileDirectory::HasChaptersInDatabase(const CURL& url)
+{
+  return Exists(url);
+}
+
+
+bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
+{
+  CFile file;
+  if (!file.Open(url))
     return false;
 
   uint8_t* buffer = (uint8_t*)av_malloc(32768);
-  m_ioctx = avio_alloc_context(buffer, 32768, 0, &m_file, cfile_file_read, nullptr, cfile_file_seek);
+  m_ioctx = avio_alloc_context(buffer, 32768, 0, &file, cfile_file_read, nullptr, cfile_file_seek);
 
   m_fctx = avformat_alloc_context();
   m_fctx->pb = m_ioctx;
   m_fctx->flags |= AVFMT_FLAG_CUSTOM_IO;
 
-  if (m_file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
+  if (file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
     m_ioctx->seekable = 0;
 
   m_ioctx->max_packet_size = 32768;
@@ -520,3 +332,63 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
 
   return contains;
 }
+
+
+//bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
+//{
+//  // Fast path: check the music database first — avoids opening the file entirely
+//  // when it has already been scanned into the library
+//  int dbSongCount = GetSongCountFromDatabase(url);
+//  if (dbSongCount > 1)
+//  {
+//    CLog::Log(LOGDEBUG, "CAudioBookFileDirectory::ContainsFiles: DB fast path — {} songs for {}",
+//              dbSongCount, url.GetRedacted());
+//    return true;
+//  }
+//  else if (dbSongCount == 1)
+//  {
+//    CLog::Log(LOGDEBUG,
+//              "CAudioBookFileDirectory::ContainsFiles: DB fast path — single song for {}",
+//              url.GetRedacted());
+//    return false;
+//  }
+//
+//  // Slow path: file not in database — open via FFmpeg and check chapter count.
+//  // m_fctx is kept open for GetDirectory() to reuse for codec info.
+//  if (!m_file.Open(url))
+//    return false;
+//
+//  uint8_t* buffer = (uint8_t*)av_malloc(32768);
+//  m_ioctx = avio_alloc_context(buffer, 32768, 0, &m_file, cfile_file_read, nullptr, cfile_file_seek);
+//
+//  m_fctx = avformat_alloc_context();
+//  m_fctx->pb = m_ioctx;
+//  m_fctx->flags |= AVFMT_FLAG_CUSTOM_IO;
+//
+//  if (m_file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
+//    m_ioctx->seekable = 0;
+//
+//  m_ioctx->max_packet_size = 32768;
+//
+//  const AVInputFormat* iformat = nullptr;
+//  av_probe_input_buffer(m_ioctx, &iformat, url.Get().c_str(), nullptr, 0, 0);
+//
+//  bool contains = false;
+//
+//  if (avformat_open_input(&m_fctx, url.Get().c_str(), iformat, nullptr) < 0)
+//  {
+//    if (m_fctx)
+//      avformat_close_input(&m_fctx);
+//    av_free(m_ioctx->buffer);
+//    av_free(m_ioctx);
+//    return false;
+//  }
+//  m_fctx->flags |= AVFMT_FLAG_NOPARSE;
+//  int err = avformat_find_stream_info(m_fctx, NULL);
+//  if (err < 0)
+//    CLog::Log(LOGERROR, "Can't detect codec info in file {}", url.GetRedacted());
+//
+//  contains = m_fctx->nb_chapters > 1;
+//
+//  return contains;
+//}
