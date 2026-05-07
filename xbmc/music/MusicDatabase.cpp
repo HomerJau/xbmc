@@ -7258,7 +7258,7 @@ bool CMusicDatabase::GetArtistsByWhereJSON(const std::set<std::string, std::less
 namespace
 {
 // clang-format off
-const std::array<TranslateJSONField, 35> JSONtoDBAlbum = {{
+const std::array<TranslateJSONField, 40> JSONtoDBAlbum = {{
   // albumview (inc scalar subquery fields use in filter rules)
   { "title",                     "string", true,  "strAlbum",               "" },  // Label field at top
   { "description",               "string", true,  "strReview",              "" },
@@ -7296,8 +7296,8 @@ const std::array<TranslateJSONField, 35> JSONtoDBAlbum = {{
   // Scalar subquery fields
   { "year",                     "integer", true,  "iYear",                  "CAST(<datefield> AS INTEGER) AS iYear" }, //From strReleaseDate or strOrigReleaseDate
   { "sourceid",                  "string", true,  "sourceid",               "(SELECT GROUP_CONCAT(album_source.idSource SEPARATOR '; ') FROM album_source WHERE album_source.idAlbum = albumview.idAlbum) AS sources" },
-  { "songgenres",                 "array", true,  "songgenres",             "(SELECT GROUP_CONCAT(DISTINCT CONCAT(genre.idGenre, ',', REPLACE(genre.strGenre, ',', '-'))) FROM song "
-    "JOIN song_genre ON song.idSong = song_genre.idSong JOIN genre ON song_genre.idGenre = genre.idGenre WHERE song.idAlbum = albumview.idAlbum) AS songgenres" } ,
+  { "songgenres",                 "array", true,  "songgenres",             "(SELECT GROUP_CONCAT(DISTINCT CONCAT(genre.idGenre, ',', REPLACE(genre.strGenre, ',', '-'))) FROM song JOIN song_genre ON "
+                                                                            "song.idSong = song_genre.idSong JOIN genre ON song_genre.idGenre = genre.idGenre WHERE song.idAlbum = albumview.idAlbum) AS songgenres" },
   // Single value JOIN fields
   { "thumbnail",                  "image", true,  "thumbnail",              "art.url AS thumbnail" }, // or (SELECT art.url FROM art WHERE art.media_id = album.idAlbum AND art.media_type = "album" AND art.type = "thumb") as url
                                                                                                       // JOIN fields (multivalue), same order as _JoinToAlbumFields
@@ -7664,7 +7664,7 @@ bool CMusicDatabase::GetAlbumsByWhereJSON(const std::set<std::string, std::less<
 namespace
 {
 // clang-format off
-const std::array<TranslateJSONField, 54> JSONtoDBSong = {{
+const std::array<TranslateJSONField, 56> JSONtoDBSong = {{
   // table and single value join fields
   { "title",                     "string", true,  "strTitle",               "" }, // Label field at top
   { "albumid",                  "integer", true,  "song.idAlbum",           "" },
