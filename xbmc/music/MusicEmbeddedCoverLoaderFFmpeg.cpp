@@ -84,8 +84,8 @@ bool CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(const std::string& strFil
     return false;
   }
 
-  if (file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
-    m_ioctx->seekable = 0;
+  if (file.IoControl(IOControl::SEEK_POSSIBLE, nullptr) == 0)
+    ioctx->seekable = 0;
 
   AVFormatContext* fctx = avformat_alloc_context();
   if (!fctx)
