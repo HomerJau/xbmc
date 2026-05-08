@@ -8,7 +8,6 @@
 #include "AudioBookFileDirectory.h"
 
 #include "FileItem.h"
-#include "FileItemList.h"
 #include "TextureDatabase.h"
 #include "URL.h"
 #include "Util.h"
@@ -126,7 +125,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   }
 
   std::string thumb;
-  thumb = IMAGE_FILES::URLFromFile(url.Get(), "music");
+  thumb = CTextureUtils::GetWrappedImageURL(url.Get(), "music");
   // Look for any embedded cover art
   CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(m_fctx, albumtag);
 
@@ -162,8 +161,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
     }
 
     tag = nullptr;
-    std::string chaptitle = StringUtils::Format(
-        CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(25010), i + 1);
+    std::string chaptitle = StringUtils::Format(g_localizeStrings.Get(25010), i + 1);
     std::string chapauthor;
     std::string chapalbum;
 
@@ -288,7 +286,7 @@ bool CAudioBookFileDirectory::Exists(const CURL& url)
 
 bool CAudioBookFileDirectory::HasChaptersInDatabase(const CURL& url)
 {
-  return Exists(url);
+  return GetSongCountFromDatabase(url) > 1;
 }
 
 
