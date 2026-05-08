@@ -45,31 +45,33 @@ using namespace TagLib;
 
 // Helper function to read embedded cover art from Matroska attachments and
 // set it on the tag and optional art object
-static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
-                                     CMusicInfoTag& tag,
-                                     EmbeddedArt* art = nullptr)
-{
-  TagLib::Matroska::Attachments* attachments = matroskaFile.attachments();
-  if (!attachments)
-    return;
 
-  const auto& attachedFiles = attachments->attachedFileList();
-  for (const auto& file : attachedFiles)
-  {
-    std::string mimeType = file.mediaType().toCString(true);
-    if (mimeType == "image/jpeg" || mimeType == "image/png" || mimeType == "image/bmp")
-    {
-      const TagLib::ByteVector& data = file.data();
-      if (data.isEmpty())
-        continue;
+//static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
+//                                     CMusicInfoTag& tag,
+//                                     EmbeddedArt* art = nullptr)
+//{
+//  TagLib::Matroska::Attachments* attachments = matroskaFile.attachments();
+//  if (!attachments)
+//    return;
+//
+//  const auto& attachedFiles = attachments->attachedFileList();
+//  for (const auto& file : attachedFiles)
+//  {
+//    std::string mimeType = file.mediaType().toCString(true);
+//    if (mimeType == "image/jpeg" || mimeType == "image/png" || mimeType == "image/bmp")
+//    {
+//      const TagLib::ByteVector& data = file.data();
+//      if (data.isEmpty())
+//        continue;
+//
+//      tag.SetCoverArtInfo(data.size(), mimeType);
+//      if (art)
+//        art->Set(reinterpret_cast<const uint8_t*>(data.data()), data.size(), mimeType, "thumb");
+//      break; // just need one cover
+//    }
+//  }
+//}
 
-      tag.SetCoverArtInfo(data.size(), mimeType);
-      if (art)
-        art->Set(reinterpret_cast<const uint8_t*>(data.data()), data.size(), mimeType, "thumb");
-      break; // just need one cover
-    }
-  }
-}
 
 namespace
 {

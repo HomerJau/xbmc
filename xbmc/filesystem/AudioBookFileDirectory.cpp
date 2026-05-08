@@ -82,10 +82,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
     separators.push_back(musicsep); // add custom music separator from as.xml
 
-  // FIX: Guard streams[0] access — crash if file has no streams
-  const int end_time_m4b_file = (m_fctx->nb_streams > 0) ? m_fctx->streams[0]->duration *
-                                                               av_q2d(m_fctx->streams[0]->time_base)
-                                                         : 0;
+  //// FIX: Guard streams[0] access — crash if file has no streams
+  //const int end_time_m4b_file = (m_fctx->nb_streams > 0) ? m_fctx->streams[0]->duration *
+  //                                                             av_q2d(m_fctx->streams[0]->time_base)
+  //                                                       : 0;
 
   const bool isAudioBook = url.IsFileType("m4b");
   // Some tags are relevant to the whole album - these are read first
