@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2005-2024 Team Kodi
+ *  Copyright (C) 2005-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -11,19 +11,18 @@
 #include "filesystem/File.h"
 
 #include <algorithm>
+#include <cstring>
 #include <string>
 #include <vector>
-
 #include <taglib/tiostream.h>
 
 /*!
- * \brief VFS-backed TagLib IOStream adapter with read-ahead buffering.
- *
+ * VFS-backed TagLib IOStream adapter with read-ahead buffering.
  * Allows TagLib to read through Kodi's virtual filesystem
  * (supports nfs://, smb://, etc.)
  *
  * TagLib performs many small reads (often just a few bytes) interspersed
- * with seeks.  Over network VFS backends each of those tiny reads becomes
+ * with seeks. Over network VFS backends each of those tiny reads becomes
  * a round-trip, which can stall Kodi noticeably.  This class keeps an
  * internal read-ahead buffer so that sequential small reads are served
  * from memory and the underlying CFile is only touched when the request
@@ -31,18 +30,18 @@
  *
  * For Matroska files, TagLib walks every top-level EBML element (including
  * huge Cluster elements containing media data) by reading a short element
- * header, then seeking past the element body.  On a multi-GB file over
+ * header, then seeking past the element body. On a multi-GB file over
  * NFS/SMB each of those tiny reads at a new offset triggers a VFS
  * round-trip.  The virtual file position tracking here eliminates redundant
  * VFS seeks: the real CFile seek is deferred until data is actually read,
  * so consecutive seek-then-seek or seek-past-buffered-data chains cost
  * nothing on the network.
  */
-class KodiTagLibStream : public TagLib::IOStream
+class MatroskaTagLibStream : public TagLib::IOStream
 {
 public:
-  KodiTagLibStream(const std::string& fileName) : m_fileName(fileName) {}
-  ~KodiTagLibStream() override { m_file.Close(); }
+  MatroskaTagLibStream(const std::string& fileName) : m_fileName(fileName) {}
+  ~MatroskaTagLibStream() override { if (m_open) m_file.Close(); }
 
   TagLib::FileName name() const override { return m_fileName.c_str(); }
 
@@ -76,12 +75,14 @@ public:
       return bv;
     }
 
-    // For large reads that exceed the buffer size, bypass the buffer entirely
+    // For large reads that exceed the buffer size, bypass the buffer entirely.
+    // Construct the ByteVector with the size-only ctor so its storage is not
+    // zero-initialised before m_file.Read() overwrites it.
     if (length > kBufCapacity)
     {
       invalidateBuffer();
       syncFilePosition(pos);
-      TagLib::ByteVector bv(static_cast<unsigned int>(length), 0);
+      TagLib::ByteVector bv(static_cast<unsigned int>(length));
       ssize_t bytesRead = m_file.Read(bv.data(), length);
       if (bytesRead > 0)
       {
@@ -91,6 +92,28 @@ public:
       }
       else
         bv.clear();
+      return bv;
+    }
+
+    // Read straddles the end of the current buffer: reuse the cached prefix
+    // and only fetch the missing tail from the underlying file. This is the
+    // common pattern when TagLib reads an EBML header from the buffer and
+    // then the element body crosses the buffer boundary.
+    if (pos >= m_bufStart && pos < m_bufStart + static_cast<int64_t>(m_bufFill))
+    {
+      const size_t prefix = static_cast<size_t>((m_bufStart + static_cast<int64_t>(m_bufFill)) - pos);
+      TagLib::ByteVector bv(static_cast<unsigned int>(length));
+      std::memcpy(bv.data(), m_buf.data() + (pos - m_bufStart), prefix);
+      const int64_t tailPos = m_bufStart + static_cast<int64_t>(m_bufFill);
+      syncFilePosition(tailPos);
+      ssize_t bytesRead = m_file.Read(bv.data() + prefix, length - prefix);
+      const size_t total = prefix + (bytesRead > 0 ? static_cast<size_t>(bytesRead) : 0);
+      bv.resize(static_cast<unsigned int>(total));
+      m_virtualPos = pos + static_cast<int64_t>(total);
+      m_filePos = tailPos + (bytesRead > 0 ? bytesRead : 0);
+      // The buffer no longer reflects a contiguous window starting at
+      // m_bufStart, so drop it.
+      invalidateBuffer();
       return bv;
     }
 
@@ -112,12 +135,10 @@ public:
   bool readOnly() const override { return true; }
 
   /*!
-   * \brief Seek to a new position — updates only the virtual position.
-   *
    * The actual CFile::Seek is deferred until the next readBlock() or
    * fillBuffer() call.  This is critical for Matroska parsing where TagLib
    * performs thousands of seek-read-seek cycles to skip past Cluster
-   * elements.  Many of those seeks are followed by another seek (when the
+   * elements. Many of those seeks are followed by another seek (when the
    * element is skipped) or land inside the existing buffer, so deferring
    * avoids thousands of NFS/SMB round-trips.
    */
@@ -155,18 +176,14 @@ public:
 
 private:
   /*!
-   * \brief Size of the internal read-ahead buffer.
-   *
-   * 256 KiB matches the buffer size used by the MMH interop project's
-   * BufferedIOStream.  This is large enough to absorb hundreds of TagLib's
-   * typical tiny EBML header reads in a single network round-trip while
-   * small enough to avoid wasting memory.
+   * Internal read-ahead buffer size of 256 KiB is large
+   * enough to absorb hundreds of TagLib's typical tiny EBML
+   * header reads in a single network round-trip while small
+   * enough to avoid wasting memory.
    */
   static constexpr size_t kBufCapacity = 262144;
 
   /*!
-   * \brief Ensure the real CFile position matches the given position.
-   *
    * Only issues a CFile::Seek if the real file position has diverged
    * from the requested position (i.e. after virtual-only seeks).
    */
@@ -183,7 +200,12 @@ private:
   {
     syncFilePosition(filePos);
     m_bufStart = filePos;
-    ssize_t bytesRead = m_file.Read(m_buf.data(), kBufCapacity);
+    // Avoid asking the VFS backend to read past EOF: some SMB/NFS
+    // implementations issue an extra round-trip in that case.
+    const int64_t remaining = (m_fileLength > filePos) ? (m_fileLength - filePos) : 0;
+    const size_t toRead = static_cast<size_t>(
+        std::min<int64_t>(static_cast<int64_t>(kBufCapacity), remaining));
+    ssize_t bytesRead = (toRead > 0) ? m_file.Read(m_buf.data(), toRead) : 0;
     m_bufFill = (bytesRead > 0) ? static_cast<size_t>(bytesRead) : 0;
     m_filePos = filePos + static_cast<int64_t>(m_bufFill);
   }
@@ -199,7 +221,7 @@ private:
   bool m_open = false;
   int64_t m_fileLength = 0;
 
-  // Virtual file position — may diverge from the real CFile position
+  // Virtual file position - may diverge from the real CFile position
   // between seek() and the next readBlock(). This avoids costly VFS
   // seeks when TagLib seeks repeatedly without reading.
   int64_t m_virtualPos = 0;

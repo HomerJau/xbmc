@@ -8,7 +8,7 @@
 
 #include "MusicInfoTagLoaderMatroska.h"
 
-#include "KodiTagLibStream.h"
+#include "MatroskaTagLibStream.h"
 #include "MusicInfoTag.h"
 #include "ServiceBroker.h"
 #include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
@@ -124,7 +124,7 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
 {
   tag.SetLoaded(false);
 
-  KodiTagLibStream matroskaStream(strFileName);
+  MatroskaTagLibStream matroskaStream(strFileName);
   if (!matroskaStream.open())
     return false;
 
@@ -361,7 +361,7 @@ void CMusicInfoTagLoaderMatroska::AddCommaDelimitedString(
 
 /*!
  * Static overload for external callers (e.g. AudioBookFileDirectory).
- * Opens its own KodiTagLibStream and delegates to the shared-stream overload.
+ * Opens its own MatroskaTagLibStream and delegates to the shared-stream overload.
 */
 void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     const std::string& fileName,
@@ -370,7 +370,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder,
     CMusicInfoTag* coverTag)
 {
-  KodiTagLibStream matroskaStream(fileName);
+  MatroskaTagLibStream matroskaStream(fileName);
   if (!matroskaStream.open())
   {
     fileTags.clear();
@@ -388,7 +388,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
 */
 void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     const std::string& fileName,
-    KodiTagLibStream& matroskaStream,
+    MatroskaTagLibStream& matroskaStream,
     std::map<std::string, std::string>& fileTags,
     std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
     std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder,
@@ -403,7 +403,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
   Matroska::Tag* matroskatag = nullptr;
   try
   {
-    // KodiTagLibStream provides a 256 KiB read-ahead buffer and deferred seeks
+    // MatroskaTagLibStream provides a 256 KiB read-ahead buffer and deferred seeks
     matroskaFile = new TagLib::Matroska::File(&matroskaStream, true, TagLib::AudioProperties::Fast);
     if (matroskaFile->isValid())
       matroskatag = matroskaFile->tag(true);

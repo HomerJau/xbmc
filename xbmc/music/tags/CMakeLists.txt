@@ -13,14 +13,15 @@ set(SOURCES MusicCodecInfoFFmpeg.cpp
 set(HEADERS ImusicInfoTagLoader.h
             MusicCodecInfoFFmpeg.h
             MusicInfoTag.h
-            MusicInfoTagLoaderCDDA.h
+		    MusicInfoTagLoaderCDDA.h
             MusicInfoTagLoaderDatabase.h
             MusicInfoTagLoaderFactory.h
             MusicInfoTagLoaderFFmpeg.h
             MusicInfoTagLoaderMatroska.h
             MusicInfoTagLoaderShn.h
+            MatroskaTagLibStream.h
             ReplayGain.h
             TagLibVFSStream.h
             TagLoaderTagLib.h)
-
+			
 core_add_library(music_tags)
