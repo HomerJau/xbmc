@@ -10,6 +10,7 @@
 
 #include "cores/FFmpeg.h"
 #include "filesystem/File.h"    
+#include "filesystem/IFileTypes.h"
 #include "tags/MusicInfoTag.h"
 #include "utils/EmbeddedArt.h"
 #include <string>
@@ -84,7 +85,7 @@ bool CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(const std::string& strFil
     return false;
   }
 
-  if (file.IoControl(IOControl::SEEK_POSSIBLE, nullptr) == 0)
+  if (file.IoControl(IOCTRL_SEEK_POSSIBLE, nullptr) == 0)
     ioctx->seekable = 0;
 
   AVFormatContext* fctx = avformat_alloc_context();
