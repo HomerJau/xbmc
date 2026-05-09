@@ -18,6 +18,7 @@ set(HEADERS ImusicInfoTagLoader.h
             MusicInfoTagLoaderFFmpeg.h
             MusicInfoTagLoaderMatroska.h
             MusicInfoTagLoaderShn.h
+            MatroskaTagLibStream.h
             ReplayGain.h
             TagLibVFSStream.h
             TagLoaderTagLib.h)
