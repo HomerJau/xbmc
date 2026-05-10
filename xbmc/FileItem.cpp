@@ -1015,12 +1015,12 @@ bool CFileItem::IsDeleted() const
 
 bool CFileItem::IsAudioBook() const
 {
-  return item.IsType(".m4b") || item.IsType(".mka") || item.IsType(".mkv");
+  return IsType(".m4b") || IsType(".mka") || IsType(".mkv");
 }
 
 bool CFileItem::IsMatroskaAudio() const
 {
-  return item.IsType(".mka") || item.IsType(".mp4") || item.IsType(".mkv");
+  return IsType(".mka") || IsType(".mp4") || IsType(".mkv");
 }
 
 bool CFileItem::IsMatroskaVideo() const
