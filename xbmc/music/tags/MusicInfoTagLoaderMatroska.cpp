@@ -112,7 +112,7 @@ static bool AppendIfNotDuplicate(std::string& currentValue,
   if (currentValue.empty())
     currentValue = newValue;
   else
-    currentValue += " | " + newValue;
+    currentValue += " / " + newValue;
 
   return true;
 }
