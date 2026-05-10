@@ -40,13 +40,14 @@ public:
   // Static overload for external callers (e.g. AudioBookFileDirectory) —
   // opens its own MatroskaTagLibStream internally.
   // If coverTag is non-null, embedded cover art info is set on it.
+  // chapterOrder tuple: (chapterUid, chapterName, startTimeSecs, endTimeSecs, editionUid)
   static void GetMatroskaMusicTags(
       const std::string& fileName,
       std::map<std::string, std::string>& fileTags,
       std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
-      std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder,
+      std::vector<std::tuple<unsigned long long, std::string, double, double, unsigned long long>>& chapterOrder,
       CMusicInfoTag* coverTag = nullptr);
-   
+
 private:
   // Internal overload used by Load() — reuses an already-open stream
   static void GetMatroskaMusicTags(
@@ -54,7 +55,7 @@ private:
       MatroskaTagLibStream& matroskaStream,
       std::map<std::string, std::string>& fileTags,
       std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
-      std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder,
+      std::vector<std::tuple<unsigned long long, std::string, double, double, unsigned long long>>& chapterOrder,
       CMusicInfoTag* coverTag = nullptr,
       EmbeddedArt* art = nullptr);
 

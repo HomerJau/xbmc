@@ -109,7 +109,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
 
   std::map<std::string, std::string> fileTags;
   std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
-  std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
+  std::vector<std::tuple<unsigned long long, std::string, double, double, unsigned long long>> chapterOrder;
   if (!isAudioBook)
   {
     CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags,
@@ -345,12 +345,12 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
 //    return true;
 //  }
 //  else if (dbSongCount == 1)
-//  {
-//    CLog::Log(LOGDEBUG,
-//              "CAudioBookFileDirectory::ContainsFiles: DB fast path — single song for {}",
-//              url.GetRedacted());
-//    return false;
-//  }
+///  {
+///    CLog::Log(LOGDEBUG,
+///              "CAudioBookFileDirectory::ContainsFiles: DB fast path — single song for {}",
+///              url.GetRedacted());
+///    return false;
+///  }
 //
 //  // Slow path: file not in database — open via FFmpeg and check chapter count.
 //  // m_fctx is kept open for GetDirectory() to reuse for codec info.
