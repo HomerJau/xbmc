@@ -15,7 +15,7 @@
 #include "cores/FFmpeg.h"
 #include "guilib/LocalizeStrings.h"
 #include "music/MusicDatabase.h"
-#include "music/tags/KodiTagLibStream.h"
+#include "music/tags/MatroskaTagLibStream.h"
 #include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
 #include "music/tags/MusicCodecInfoFFmpeg.h"
 #include "music/tags/MusicInfoTagLoaderMatroska.h"
