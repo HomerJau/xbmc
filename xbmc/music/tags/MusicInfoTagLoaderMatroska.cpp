@@ -139,7 +139,7 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   // (single file parse — avoids opening the Matroska file twice)
   std::map<std::string, std::string> fileTags;
   std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
-  std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder;
+  std::vector<std::tuple<unsigned long long, std::string, double, double, unsigned long long>> chapterOrder;
   GetMatroskaMusicTags(strFileName, matroskaStream, fileTags, chapterTags, chapterOrder, &tag, art);
 
   if (fileTags.empty())
