@@ -147,7 +147,7 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   // (single file parse — avoids opening the Matroska file twice)
   std::map<std::string, std::string> fileTags;
   std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
-  std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
+  std::vector<std::tuple<unsigned long long, std::string, double, double, unsigned long long>> chapterOrder;
   GetMatroskaMusicTags(strFileName, matroskaStream, fileTags, chapterTags, chapterOrder, &tag, art);
 
   if (fileTags.empty())
@@ -376,8 +376,9 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     const std::string& fileName,
     std::map<std::string, std::string>& fileTags,
     std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
-    std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder,
-    CMusicInfoTag* coverTag)
+    std::vector<std::tuple<unsigned long long, std::string, double, double, unsigned long long>>&
+        chapterOrder,
+      CMusicInfoTag* coverTag)
 {
   MatroskaTagLibStream matroskaStream(fileName);
   if (!matroskaStream.open())
@@ -400,7 +401,8 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     MatroskaTagLibStream& matroskaStream,
     std::map<std::string, std::string>& fileTags,
     std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
-    std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder,
+    std::vector<std::tuple<unsigned long long, std::string, double, double, unsigned long long>>&
+        chapterOrder,
     CMusicInfoTag* coverTag,
     EmbeddedArt* art)
 {
@@ -446,30 +448,33 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
           chapters->chapterEditionList();
       for (const auto& edition : editions)
       {
-        if (edition.uid())
+        unsigned long long editionUid = edition.uid();
+        for (const auto& chapter : edition.chapterList())
         {
-          for (const auto& chapter : edition.chapterList())
+          unsigned long long chapUid = chapter.uid();
+
+          // Skip micro chapters less than 1 second long
+          long long durationNs = std::abs(static_cast<long long>(chapter.timeEnd()) -
+                                          static_cast<long long>(chapter.timeStart()));
+          if (durationNs <= 1000000000LL)
+            continue;
+
+          std::string chapterName;
+          if (chapUid > 0 && !chapter.displayList().isEmpty())
           {
-            // Skip micro chapters less than 1 second long
-            // Use abs to handle chapters with no end time (timeEnd returns 0 when not set)
-            long long durationNs = std::abs(static_cast<long long>(chapter.timeEnd()) -
-                                            static_cast<long long>(chapter.timeStart()));
-            if (durationNs <= 1000000000LL)
-              continue;
-
-            std::string chapterName;
-            if (!chapter.displayList().isEmpty())
-              chapterName = chapter.displayList().front().string().toCString(true);
-
-            std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", chapterName}};
-            chapterTags[chapter.uid()] = chapterTagList;
-
-            double startTimeSecs = static_cast<double>(chapter.timeStart()) / 1000000000.0;
-            double endTimeSecs = static_cast<double>(chapter.timeEnd()) / 1000000000.0;
-            chapterOrder.push_back(
-                std::make_tuple(chapter.uid(), chapterName, startTimeSecs, endTimeSecs));
-            chapterCount++;
+            // Match VB behavior: keep the last display name
+            for (const auto& display : chapter.displayList())
+              chapterName = display.string().toCString(true);
           }
+
+          std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", chapterName}};
+          chapterTags[chapUid] = chapterTagList;
+
+          double startTimeSecs = static_cast<double>(chapter.timeStart()) / 1000000000.0;
+          double endTimeSecs = static_cast<double>(chapter.timeEnd()) / 1000000000.0;
+          chapterOrder.push_back(
+              std::make_tuple(chapUid, chapterName, startTimeSecs, endTimeSecs, editionUid));
+          chapterCount++;
         }
       }
     }
@@ -487,7 +492,8 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     constexpr unsigned long long DummyChapterUid = 999000999000999;
     if (chapterCount == 0)
     {
-      chapterOrder.push_back(std::make_tuple(DummyChapterUid, std::string("SongTags"), 0.0, 0.0));
+      chapterOrder.push_back(
+          std::make_tuple(DummyChapterUid, std::string("SongTags"), 0.0, 0.0, 0ULL));
       std::map<std::string, std::string> chapterTagList = {{"CHAPTERNAME", "SongTags"}};
       chapterTags[DummyChapterUid] = chapterTagList;
     }
@@ -512,7 +518,8 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
           chapterOrder[i] = std::make_tuple(std::get<0>(chapterOrder[i]), // uid
                                             std::get<1>(chapterOrder[i]), // name
                                             std::get<2>(chapterOrder[i]), // startTime
-                                            newEndTime); // fixed endTime
+                                            newEndTime, // fixed endTime
+                                            std::get<4>(chapterOrder[i])); // editionUid
         }
       }
     }

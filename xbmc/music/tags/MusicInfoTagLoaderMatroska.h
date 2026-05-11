@@ -42,7 +42,8 @@ public:
       const std::string& fileName,
       std::map<std::string, std::string>& fileTags,
       std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
-      std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder,
+      std::vector<std::tuple<unsigned long long, std::string, double, double, unsigned long long>>&
+          chapterOrder,
       CMusicInfoTag* coverTag = nullptr);
 
 private:
@@ -52,7 +53,8 @@ private:
       MatroskaTagLibStream& matroskaStream,
       std::map<std::string, std::string>& fileTags,
       std::map<unsigned long long, std::map<std::string, std::string>>& chapterTags,
-      std::vector<std::tuple<unsigned long long, std::string, double, double>>& chapterOrder,
+      std::vector<std::tuple<unsigned long long, std::string, double, double, unsigned long long>>&
+          chapterOrder,
       CMusicInfoTag* coverTag = nullptr,
       EmbeddedArt* art = nullptr);
 

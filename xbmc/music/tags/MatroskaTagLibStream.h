@@ -111,9 +111,14 @@ public:
       bv.resize(static_cast<unsigned int>(total));
       m_virtualPos = pos + static_cast<int64_t>(total);
       m_filePos = tailPos + (bytesRead > 0 ? bytesRead : 0);
-      // The buffer no longer reflects a contiguous window starting at
-      // m_bufStart, so drop it.
+      // The old buffer window is no longer contiguous with the data just
+      // returned. Refill the buffer at the new virtual position so the
+      // next EBML header read (very common immediately after a straddle
+      // on an element boundary) stays a cache hit instead of triggering
+      // another VFS round-trip.
       invalidateBuffer();
+      if (m_virtualPos < m_fileLength)
+        fillBuffer(m_virtualPos);
       return bv;
     }
 
@@ -176,12 +181,15 @@ public:
 
 private:
   /*!
-   * Internal read-ahead buffer size of 256 KiB is large
-   * enough to absorb hundreds of TagLib's typical tiny EBML
-   * header reads in a single network round-trip while small
-   * enough to avoid wasting memory.
+   * Internal read-ahead buffer size of 1 MiB is sized to cover
+   * TagLib's Matroska FAST-mode front-of-file scan limit
+   * (512 KiB in matroskafile.cpp) plus headroom for SeekHead
+   * targets and small embedded cover art near the file head,
+   * so the entire FAST-mode front scan can typically be served
+   * from a single VFS round-trip. Still small enough to be
+   * negligible even with several concurrent tag loads.
    */
-  static constexpr size_t kBufCapacity = 262144;
+  static constexpr size_t kBufCapacity = 1048576;
 
   /*!
    * Only issues a CFile::Seek if the real file position has diverged

@@ -106,7 +106,9 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
 
   std::map<std::string, std::string> fileTags;
   std::map<unsigned long long, std::map<std::string, std::string>> chapterTags;
-  std::vector<std::tuple<unsigned long long, std::string, double, double>> chapterOrder;
+  std::vector<std::tuple<unsigned long long, std::string, double, double, unsigned long long>>
+      chapterOrder;
+
   if (!isAudioBook)
   {
     CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(url.Get(), fileTags, chapterTags,
