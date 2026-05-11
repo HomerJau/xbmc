@@ -12,7 +12,7 @@
 #include "MusicInfoTag.h"
 #include "ServiceBroker.h"
 #include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
-#include "filesystem/File.h"
+#include <commons/ilog.h>
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
 #include "utils/EmbeddedArt.h"
@@ -21,10 +21,14 @@
 #ifdef TARGET_WINDOWS
 #include "platform/win32/CharsetConverter.h"
 #endif
-#include <cmath>
+#include <algorithm>
 #include <array>
+#include <cstdint>
+#include <cstdlib>
 #include <exception>
+#include <iterator>
 #include <map>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -36,8 +40,8 @@
 #include <taglib/matroskafile.h>
 #include <taglib/matroskasimpletag.h>
 #include <taglib/matroskatag.h>
-#include <taglib/tfilestream.h>
-#include <taglib/tiostream.h>
+#include <taglib/tbytevector.h>
+#include "MusicCodecInfoFFmpeg.h"
 
 using namespace MUSIC_INFO;
 using namespace XFILE;

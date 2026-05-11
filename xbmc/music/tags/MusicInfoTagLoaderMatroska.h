@@ -9,13 +9,16 @@
 #pragma once
 
 #include "ImusicInfoTagLoader.h"
-#include "music/tags/MusicCodecInfoFFmpeg.h"
 #include "MatroskaTagLibStream.h"
+#include "MusicInfoTag.h"
+#include "utils/EmbeddedArt.h"
 
 #include <map>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
+
 
 namespace MUSIC_INFO
 {
