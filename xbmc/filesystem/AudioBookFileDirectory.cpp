@@ -9,12 +9,19 @@
 #include "AudioBookFileDirectory.h"
 #include "FileItem.h"
 #include "FileItemList.h"
+#include "IFileTypes.h"
 #include "ServiceBroker.h"
 
 #include "URL.h"
 #include "Util.h"
 #include "dbwrappers/Database.h"
 #include "filesystem/File.h"
+#include "imagefiles/ImageFileURL.h"
+#include "music/MusicDatabase.h"
+#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
+#include "music/tags/MusicCodecInfoFFmpeg.h"
+#include "music/tags/MusicInfoTag.h"
+#include "music/tags/MusicInfoTagLoaderMatroska.h"
 #include "resources/LocalizeStrings.h"
 #include "imagefiles/ImageFileURL.h"
 #include "music/tags/MusicInfoTag.h"
@@ -25,11 +32,26 @@
 #include "resources/ResourcesComponent.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
+#include "utils/StringUtils.h"
 #include "utils/URIUtils.h"
 #include "utils/log.h"
 #include "utils/StringUtils.h"
 
 #include <map>
+#include <tuple>
+#include <vector>
+
+#include <commons/ilog.h>
+#include <libavformat/avformat.h>
+#include <libavformat/avio.h>
+#include <libavutil/dict.h>
+#include <libavutil/mem.h>
+#include <libavutil/rational.h>
+
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -79,7 +101,7 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
     separators.push_back(musicsep); // add custom music separator from as.xml
 
-  // FIX: Guard streams[0] access — crash if file has no streams
+  // FIX: Guard streams[0] access ï¿½ crash if file has no streams
   const int end_time_m4b_file = (m_fctx->nb_streams > 0) ? m_fctx->streams[0]->duration *
                                                                av_q2d(m_fctx->streams[0]->time_base)
                                                          : 0;
@@ -125,28 +147,35 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
 
   std::string thumb;
   thumb = IMAGE_FILES::URLFromFile(url.Get(), "music");
-  // Look for any embedded cover art
+  /*! Look for any embedded cover art
+  * This can be dropped when taglib 2.3.1 is released with the embedded cover art performance
+  * fix for Matroska files and we can just use TagLib to read the embedded cover art for Matroska
+  * files. Until then, we need to use FFmpeg to read the embedded cover art for Matroska files.
+  */ 
   CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(m_fctx, albumtag);
 
- // now get the AudioCodec etc for QQ Kodi-------------------------------------
+ // now get the AudioCodec -------------------------------------
   bool haveFFmpegInfo = false;
   musicCodecInfo codec_info;
   haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(url.Get(), codec_info);
-  if (haveFFmpegInfo) // use data from FFmpeg (taglib 2.2.1 does not support some codecs)
+  if (haveFFmpegInfo) // use data from FFmpeg (taglib 2.3 does not support some codecs)
   {
     albumtag.SetBitRate(codec_info.bitRate);
     albumtag.SetSampleRate(codec_info.sampleRate);
-    albumtag.SetBitsPerSample(codec_info.bitsPerSample);
-    albumtag.SetCodec(codec_info.codecName);
+    /*!
+    * Additional Music properties (next PR - Add Album Codec Support to Music)
+    * albumtag.SetBitsPerSample(codec_info.bitsPerSample);
+    * albumtag.SetCodec(codec_info.codecName); // e.g. 'truehd_atmos', 'dts_ma', 'dts_hd', etc
+    */
     albumtag.SetNoOfChannels(codec_info.channels);
     albumtag.SetDuration(codec_info.duration);
   }
 
   float chapter_size = 0;
   bool chapter_error = false;
-  for (unsigned int i = 0; i < m_fctx->nb_chapters; ++i)
+  for (unsigned int i = 0; m_fctx->chapters && i < m_fctx->nb_chapters; ++i)
   {
-    if (m_fctx->chapters[i]->start < 0) // negative start time, ignore it
+    if (!m_fctx->chapters[i] || m_fctx->chapters[i]->start < 0) // null or negative start time
       continue;
     chapter_size = m_fctx->chapters[i]->end * av_q2d(m_fctx->chapters[i]->time_base);
     if (chapter_size < 1 && chapter_size > 0) // Chapter must have positive time of more than 1 sec
@@ -215,25 +244,6 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
     item->SetLabel(StringUtils::Format("{0:02}. {1} - {2}", i + 1,
                                          item->GetMusicInfoTag()->GetAlbum(),
                                          item->GetMusicInfoTag()->GetTitle()));
-    //item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->start *
-    //                                                     av_q2d(m_fctx->chapters[i]->time_base)));
-    //item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->end *
-    //                                                   av_q2d(m_fctx->chapters[i]->time_base)));
-    //if (item->GetEndOffset() < 0 ||
-    //    item->GetEndOffset() > CUtil::ConvertMilliSecsToSecs(m_fctx->duration))
-    //{
-    //  if (i < m_fctx->nb_chapters - 1)
-    //    item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(
-    //        m_fctx->chapters[i + 1]->start * av_q2d(m_fctx->chapters[i + 1]->time_base)));
-    //  else
-    //  {
-    //    item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(end_time_mka_file)); // mka file
-    //    if (item->GetEndOffset() < 0)
-    //      item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(end_time_m4b_file)); // m4b file
-    //  }
-    //}
-    //item->GetMusicInfoTag()->SetDuration(
-    //    CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
 
     item->SetProperty("item_start", item->GetStartOffset());
     item->SetProperty("audio_bookmark", item->GetStartOffset());
@@ -244,6 +254,14 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   return true;
 }
 
+ /*!
+ * Next 4 methods were impelmented to help resolve slow initial play of
+ * Matroska files by PaPlayer when testing THIS code originally writtten for 21.3
+ * PaPlayer was calling Exists() and ContainsFiles() during initial playback to determine
+ * if the file is an audiobook. There will be a PR to implement these soon.
+ * CAudioBookFileDirectory is a Library scanning class and should never be used
+ * during playback, if the file has been scanned into the music database.
+ */
 int CAudioBookFileDirectory::GetSongCountFromDatabase(const CURL& url)
 {
     CMusicDatabase db;
@@ -274,7 +292,7 @@ bool CAudioBookFileDirectory::Exists(const CURL& url)
     if (dbSongCount > 1)
         return true;
     if (dbSongCount >= 0)
-        return false; // 0 or 1 songs — not a multi-chapter audiobook
+        return false; // 0 or 1 songs ï¿½ not a multi-chapter audiobook
 
     // DB unavailable (-1). Return false to avoid blocking playback.
     // The file will be properly detected during library scan when the DB

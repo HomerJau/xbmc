@@ -21,10 +21,12 @@ void CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(AVFormatContext* fctx,
                                                        CMusicInfoTag& tag,
                                                        EmbeddedArt* art /* nullptr */)
 {
+  if (!fctx || !fctx->streams)
+    return;
   for (size_t i = 0; i < fctx->nb_streams; ++i)
   {
     const AVStream* fctx_pic = fctx->streams[i];
-    if ((fctx_pic->disposition & AV_DISPOSITION_ATTACHED_PIC) == 0)
+    if (!fctx_pic || (fctx_pic->disposition & AV_DISPOSITION_ATTACHED_PIC) == 0)
       continue;
 
     AVCodecID pic_id = fctx_pic->codecpar->codec_id;

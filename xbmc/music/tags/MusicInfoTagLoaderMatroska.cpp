@@ -9,21 +9,28 @@
 #include "MusicInfoTagLoaderMatroska.h"
 
 #include "MatroskaTagLibStream.h"
+#include "MusicCodecInfoFFmpeg.h"
 #include "MusicInfoTag.h"
 #include "ServiceBroker.h"
 #include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
-#include <commons/ilog.h>
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
 #include "utils/EmbeddedArt.h"
 #include "utils/StringUtils.h"
 #include "utils/log.h"
-#ifdef TARGET_WINDOWS
-#include "platform/win32/CharsetConverter.h"
-#endif
+
+#include <commons/ilog.h>
+#include <taglib/audioproperties.h>
+#include <taglib/matroskachapteredition.h>
+#include <taglib/matroskachapters.h>
+#include <taglib/matroskafile.h>
+#include <taglib/matroskasimpletag.h>
+#include <taglib/matroskatag.h>
+#include <taglib/tlist.tcc>
+#include <taglib/tstring.h>
+
 #include <algorithm>
 #include <array>
-#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <iterator>
@@ -32,31 +39,17 @@
 #include <tuple>
 #include <vector>
 
-#include <taglib/audioproperties.h>
-#include <taglib/matroskaattachedfile.h>
-#include <taglib/matroskaattachments.h>
-#include <taglib/matroskachapteredition.h>
-#include <taglib/matroskachapters.h>
-#include <taglib/matroskafile.h>
-#include <taglib/matroskasimpletag.h>
-#include <taglib/matroskatag.h>
-#include <taglib/tbytevector.h>
-#include "MusicCodecInfoFFmpeg.h"
-
 using namespace MUSIC_INFO;
 using namespace XFILE;
 using namespace TagLib;
 
 /*!
- * brief Read embedded cover art from a Matroska file's attachments via TagLib.
- *
- * Matroska stores cover art as attached files. This searches for the first
- * attachment with a supported image MIME type (image/jpeg, image/png, image/bmp).
- *
- * \param matroskaFile  An open, valid TagLib Matroska::File.
- * \param tag           CMusicInfoTag to set cover art info on.
- * \param art           Optional EmbeddedArt to receive the actual image data.
- */
+* Read embedded cover art from attachments using TagLib (performance issue in TagLib 2.3 
+* need to be resolved for Matroska large files with large attachments over SMB/NFS.
+* This should be done in TagLib 2.3.1 (there is a PR open to fix this). Once resolved, we
+* can drop the FFmpeg embedded cover art loading and just use TagLib for Matroska files.
+* This is a static method that can will be used once 2.3.1 is released before Piers final  
+
 static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
                                      CMusicInfoTag& tag,
                                      EmbeddedArt* art = nullptr)
@@ -82,6 +75,7 @@ static void GetMatroskaEmbeddedCover(TagLib::Matroska::File& matroskaFile,
     }
   }
 }
+*/
 
 namespace
 {
@@ -89,10 +83,13 @@ const std::vector<std::string> SupportedArtistMultiValueSeparators = {";", "|"};
 const std::vector<std::string> SupportedMultiValueSeparators       = {";", "/", "|", ","};
 } 
 
-// Appends " | " + newValue to currentValue if newValue is not already present
-// (case-insensitive) among the existing delimited values. The set of delimiters
-// used to split currentValue depends on whether tagname refers to an artist tag.
-// Returns true if the value was appended, false otherwise.
+/*!
+* Translate multiple single key tags (Matrosk spec) to delimited a single for internal use.
+* Appends " / " + newValue to currentValue if newValue is not already present
+* (case-insensitive) among the existing delimited values. The set of delimiters
+* used to split currentValue depends on whether tagname refers to an artist tag.
+* Returns true if the value was appended, false otherwise.
+*/
 static bool AppendIfNotDuplicate(std::string& currentValue,
                                  const std::string& newValue,
                                  const std::string& tagname)
@@ -129,7 +126,11 @@ static bool AppendIfNotDuplicate(std::string& currentValue,
   return true;
 }
 
-// Used by Matroka files with no chapters (most comon) or with a single (one song)
+/*!
+* Used by Matroska files with no chapters (most comon) or with a single (one song)
+* Typically these are Matroska files split by Chapter start times with each chapter having
+* song tags but no chapter name or chapter tags.
+*/
 bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
                                        CMusicInfoTag& tag,
                                        EmbeddedArt* art)
@@ -159,9 +160,9 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   for (const auto& t : fileTags)
     ParseTag(t.first, t.second, separators, musicsep, tag);
   /*!
-  // now process the Chapter (track) if the Matroska file has a chapter
-  // there is usually no chapters but there could be one, if > 1 
-  // the file is processed as a whole album by CAuidoBookFileDirectory
+  * now process the Chapter (track) if the Matroska file has a chapter
+  * there is usually no chapters but there could be one, if > 1 
+  * the file is processed as a whole album by CAudioBookFileDirectory
   */
   if (!chapterOrder.empty())
   {
@@ -176,7 +177,7 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   // Look for any embedded cover art
   CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(strFileName, tag, art);
 
-  // Get Codec data using FFmpeg (if taglib accurate for all codecs yet v2.2.1)
+  // Get Codec data using FFmpeg (taglib not accurate for all codecs yet - v2.3)
   bool haveFFmpegInfo = false;
   musicCodecInfo codec_info;
   haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info);
@@ -184,8 +185,11 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   {
     tag.SetBitRate(codec_info.bitRate);
     tag.SetSampleRate(codec_info.sampleRate);
-    tag.SetBitsPerSample(codec_info.bitsPerSample);
-    tag.SetCodec(codec_info.codecName);
+    /*!
+    * Additional Music properties (next PR)
+    * albumtag.SetBitsPerSample(codec_info.bitsPerSample);
+    * albumtag.SetCodec(codec_info.codecName); // e.g. 'truehd_atmos', 'dts_ma', 'dts_hd', etc
+    */
     tag.SetNoOfChannels(codec_info.channels);
     tag.SetDuration(codec_info.duration);
   }
@@ -202,9 +206,11 @@ void CMusicInfoTagLoaderMatroska::ParseTag(const std::string& key,
                                            const std::string& musicsep,
                                            CMusicInfoTag& tag)
 {
-  // Matroska Tag spec does not allow storing multi values in a single tag, but some tools
-  // do it anyway using a separator. So we need to split the value using the separator and
-  // then join it back using the music item separator from as.xml if needed.
+  /*!
+  * Matroska Tag spec does not allow storing multi values in a single tag, but some tools
+  * do it anyway using a delimiter. So we need to split the value using the separator and
+  * then join it back using the music item separator from as.xml if needed.
+  */
   if (key == "ALBUM")
     tag.SetAlbum(value);
   else if (key == "ARTIST")
@@ -373,8 +379,9 @@ void CMusicInfoTagLoaderMatroska::AddCommaDelimitedString(
 }
 
 /*!
- * Static overload for external callers (e.g. AudioBookFileDirectory).
- * Opens its own MatroskaTagLibStream and delegates to the shared-stream overload.
+* Used by Matroska files with multiple chapters. Each chapter is a separate song.
+* Static overload for external callers (e.g. AudioBookFileDirectory).
+* Opens its own MatroskaTagLibStream and delegates to the shared-stream overload.
 */
 void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     const std::string& fileName,
@@ -396,9 +403,8 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
 }
 
 /*!
- * use TagLib to read hierarchy of tags in file and populate album and chapter
- * (track) tags. this creates a map of chapterUid to track tags for each chapter.
- * If coverTag is non-null, embedded cover art from Matroska attachments is set on it.
+*  use TagLib to read hierarchy of tags in file and populate album and chapter
+* (track) tags. this creates a map of chapterUid to track tags for each chapter.
 */
 void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     const std::string& fileName,
@@ -418,7 +424,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
   Matroska::Tag* matroskatag = nullptr;
   try
   {
-    // MatroskaTagLibStream provides a 256 KiB read-ahead buffer and deferred seeks
+    // MatroskaTagLibStream provides a 512 KiB read-ahead buffer and deferred seeks
     matroskaFile = new TagLib::Matroska::File(&matroskaStream, true, TagLib::AudioProperties::Fast);
     if (matroskaFile->isValid())
       matroskatag = matroskaFile->tag(true);
@@ -428,9 +434,13 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
       return;
     }
     
-    // Read embedded cover art from attachments 
-   /* if (coverTag)
-      GetMatroskaEmbeddedCover(*matroskaFile, *coverTag, art);*/
+    /* 
+    * Read embedded cover art from attachments (performance issue in Taglib 2.3 need to be resolved
+    * This should be done in TagLib 2.3.1 (there is a PR open to fix this). Once resolved, we
+    * can drop the FFmpeg embedded cover art loading and just use TagLib for Matroska files.
+    * if (coverTag)
+    *  GetMatroskaEmbeddedCover(*matroskaFile, *coverTag, art)
+    */
 
     double fileDuration = 0.0;
     TagLib::AudioProperties* audioProps = matroskaFile->audioProperties();
@@ -490,6 +500,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
     * TargetTypeValue 30 but no ChapterUid, so need to save these somewhere.
     *
     * If chapters exist, fix any that have no end time set (endTime <= 0):
+    *  (out of spec but some taggers do this, Kodi neds to deal with this internally)
     *  - use the next chapter's start time, or
     *  - use the file duration for the last chapter.
     */
@@ -530,8 +541,8 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
 
     /*!
     * Define tags that support multiple values and need to be concatenated into a
-    * single internal Kodi tag with a semicolon separator if more than one value is
-    * present. This is needed to support multiple values with Matroska
+    * single internal Kodi tag with a separator if more than one value is
+    * present. This is needed to support multiple same key tags (Matroska spec)
     */
     static constexpr std::array<const char*, 21> MULTIPLE_VALUE_TAGS = {"ALBUMARTISTS",
                                                                         "ALBUMARTISTSORT",
@@ -585,6 +596,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
         /*!
         * TITLE with targetTypeValue 50 is the Album title in Matroska spec
         * ALBUM was used in Kodi 21.3 for ffmpeg tag reding compatibility
+        * targetTypeValue 60 used by MP3Tag for concerts, maps to ALBUM in Kodi music
         */
         if (TagName == "TITLE")
         {
@@ -622,6 +634,11 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
      
       TagName = StringUtils::ToUpper(tag.name().to8Bit(true));
       TagValue = tag.toString().to8Bit(true);
+
+      /*!
+      * No targetTypeValue should be considered as an 'Album' level tag to avoid losing metadata
+      * for files that don't follow the Matroska spec and don't set targetTypeValue.
+      */
       if (targetTypeValue == 0)
       {
         if (TagName == "TITLE")

@@ -10,11 +10,18 @@
 
 #include "filesystem/File.h"
 
+#include <PlatformDefs.h>
+
+#include <taglib/tbytevector.h>
+#include <taglib/taglib.h>
+#include <taglib/tiostream.h>
+
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
-#include <taglib/tiostream.h>
 
 /*!
  * VFS-backed TagLib IOStream adapter with read-ahead buffering.
@@ -75,9 +82,11 @@ public:
       return bv;
     }
 
-    // For large reads that exceed the buffer size, bypass the buffer entirely.
-    // Construct the ByteVector with the size-only ctor so its storage is not
-    // zero-initialised before m_file.Read() overwrites it.
+    /*!
+     * For large reads that exceed the buffer size, bypass the buffer entirely.
+     * Construct the ByteVector with the size-only ctor so its storage is not
+     * zero-initialised before m_file.Read() overwrites it.
+     */
     if (length > kBufCapacity)
     {
       invalidateBuffer();
@@ -95,10 +104,12 @@ public:
       return bv;
     }
 
-    // Read straddles the end of the current buffer: reuse the cached prefix
-    // and only fetch the missing tail from the underlying file. This is the
-    // common pattern when TagLib reads an EBML header from the buffer and
-    // then the element body crosses the buffer boundary.
+    /*!
+     * Read straddles the end of the current buffer: reuse the cached prefix
+     * and only fetch the missing tail from the underlying file. This is the
+     * common pattern when TagLib reads an EBML header from the buffer and
+     * then the element body crosses the buffer boundary.
+     */
     if (pos >= m_bufStart && pos < m_bufStart + static_cast<int64_t>(m_bufFill))
     {
       const size_t prefix = static_cast<size_t>((m_bufStart + static_cast<int64_t>(m_bufFill)) - pos);
@@ -111,11 +122,13 @@ public:
       bv.resize(static_cast<unsigned int>(total));
       m_virtualPos = pos + static_cast<int64_t>(total);
       m_filePos = tailPos + (bytesRead > 0 ? bytesRead : 0);
-      // The old buffer window is no longer contiguous with the data just
-      // returned. Refill the buffer at the new virtual position so the
-      // next EBML header read (very common immediately after a straddle
-      // on an element boundary) stays a cache hit instead of triggering
-      // another VFS round-trip.
+      /*!
+       * The old buffer window is no longer contiguous with the data just
+       * returned. Refill the buffer at the new virtual position so the
+       * next EBML header read (very common immediately after a straddle
+       * on an element boundary) stays a cache hit instead of triggering
+       * another VFS round-trip.
+       */
       invalidateBuffer();
       if (m_virtualPos < m_fileLength)
         fillBuffer(m_virtualPos);
@@ -229,12 +242,15 @@ private:
   bool m_open = false;
   int64_t m_fileLength = 0;
 
-  // Virtual file position - may diverge from the real CFile position
-  // between seek() and the next readBlock(). This avoids costly VFS
-  // seeks when TagLib seeks repeatedly without reading.
+  /*!
+   * Virtual file position - may diverge from the real CFile position
+   * between seek() and the next readBlock(). This avoids costly VFS
+   * seeks when TagLib seeks repeatedly without reading.
+   */
   int64_t m_virtualPos = 0;
 
-  // Tracks the real CFile position so we can skip redundant Seek calls
+ 
+  // Tracks the real CFile position so we can skip redundant Seek calls.
   int64_t m_filePos = 0;
 
   // Read-ahead buffer state
