@@ -162,6 +162,12 @@ bool CLinuxRendererGLES::Configure(const VideoPicture &picture, float fps, unsig
               m_passthroughHDR ? "on" : "off");
   }
 
+  m_hdrFboActive =
+      m_passthroughHDR && CServiceBroker::GetWinSystem()->SetGuiCompositing(picture.color_transfer);
+  if (m_passthroughHDR && !m_hdrFboActive)
+    CLog::Log(LOGWARNING, "LinuxRendererGLES::Configure: HDR passthrough active but GUI "
+                          "compositing not supported by windowing system");
+
   return true;
 }
 
@@ -328,7 +334,8 @@ void CLinuxRendererGLES::LoadPlane(CYuvPlane& plane, int type,
       pixelData = m_planeBuffer;
     }
   }
-  glTexSubImage2D(m_textureTarget, 0, 0, 0, width, height, type, GL_UNSIGNED_BYTE, pixelData);
+  GLenum datatype = (bpp == 2) ? GL_UNSIGNED_SHORT : GL_UNSIGNED_BYTE;
+  glTexSubImage2D(m_textureTarget, 0, 0, 0, width, height, type, datatype, pixelData);
 
   if (m_pixelStoreKey > 0 && pixelStoreChanged)
     glPixelStorei(m_pixelStoreKey, 0);
@@ -336,17 +343,13 @@ void CLinuxRendererGLES::LoadPlane(CYuvPlane& plane, int type,
   // check if we need to load any border pixels
   if (height < plane.texheight)
   {
-    glTexSubImage2D(m_textureTarget, 0,
-                    0, height, width, 1,
-                    type, GL_UNSIGNED_BYTE,
+    glTexSubImage2D(m_textureTarget, 0, 0, height, width, 1, type, datatype,
                     static_cast<const unsigned char*>(pixelData) + stride * (height - 1));
   }
 
   if (width  < plane.texwidth)
   {
-    glTexSubImage2D(m_textureTarget, 0,
-                    width, 0, 1, height,
-                    type, GL_UNSIGNED_BYTE,
+    glTexSubImage2D(m_textureTarget, 0, width, 0, 1, height, type, datatype,
                     static_cast<const unsigned char*>(pixelData) + bps * (width - 1));
   }
 
@@ -583,14 +586,50 @@ void CLinuxRendererGLES::RenderUpdate(int index, int index2, bool clear, unsigne
 void CLinuxRendererGLES::RenderUpdateVideo(bool clear, unsigned int flags, unsigned int alpha)
 {
   if (!m_bConfigured)
-  {
     return;
-  }
 
   if (IsGuiLayer())
-  {
     return;
+
+  int index = m_iYV12RenderBuffer;
+  CPictureBuffer& buf = m_buffers[index];
+
+  if (!buf.fields[FIELD_FULL][0].id)
+    return;
+
+  ManageRenderArea();
+
+  if (clear)
+  {
+    if (alpha == 255)
+      DrawBlackBars();
+    else
+      ClearBackBuffer();
   }
+
+  if (alpha < 255)
+  {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (m_pYUVProgShader)
+      m_pYUVProgShader->SetAlpha(alpha / 255.0f);
+    if (m_pYUVBobShader)
+      m_pYUVBobShader->SetAlpha(alpha / 255.0f);
+  }
+  else
+  {
+    glDisable(GL_BLEND);
+    if (m_pYUVProgShader)
+      m_pYUVProgShader->SetAlpha(1.0f);
+    if (m_pYUVBobShader)
+      m_pYUVBobShader->SetAlpha(1.0f);
+  }
+
+  if (!Render(flags, index) && clear)
+    ClearBackBuffer();
+
+  VerifyGLState();
+  glEnable(GL_BLEND);
 }
 
 void CLinuxRendererGLES::UpdateVideoFilter()
@@ -901,6 +940,8 @@ void CLinuxRendererGLES::UnInit()
 
   if (m_bConfigured)
   {
+    m_hdrFboActive = false;
+    CServiceBroker::GetWinSystem()->SetGuiCompositing(false);
     CServiceBroker::GetWinSystem()->SetHDR(nullptr);
     m_passthroughHDR = false;
     CServiceBroker::GetWinSystem()->SetVideoOutput(nullptr);
@@ -1456,22 +1497,32 @@ bool CLinuxRendererGLES::UploadYV12Texture(int source)
 
   VerifyGLState();
 
-  glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-  // load Y plane
-  LoadPlane(buf.fields[FIELD_FULL][0], GL_LUMINANCE,
-            im->width, im->height,
-            im->stride[0], im->bpp, im->plane[0]);
+  if (im->bpp == 2)
+  {
+    // >8-bit: three separate GL_R16_EXT planes
+    LoadPlane(buf.fields[FIELD_FULL][0], GL_RED, im->width, im->height, im->stride[0], im->bpp,
+              im->plane[0]);
 
-  // load U plane
-  LoadPlane(buf.fields[FIELD_FULL][1], GL_LUMINANCE,
-            im->width >> im->cshift_x, im->height >> im->cshift_y,
-            im->stride[1], im->bpp, im->plane[1]);
+    LoadPlane(buf.fields[FIELD_FULL][1], GL_RED, im->width >> im->cshift_x,
+              im->height >> im->cshift_y, im->stride[1], im->bpp, im->plane[1]);
 
-  // load V plane
-  LoadPlane(buf.fields[FIELD_FULL][2], GL_ALPHA,
-            im->width >> im->cshift_x, im->height >> im->cshift_y,
-            im->stride[2], im->bpp, im->plane[2]);
+    LoadPlane(buf.fields[FIELD_FULL][2], GL_RED, im->width >> im->cshift_x,
+              im->height >> im->cshift_y, im->stride[2], im->bpp, im->plane[2]);
+  }
+  else
+  {
+    // 8-bit: GL_LUMINANCE for Y/U, GL_ALPHA for V
+    LoadPlane(buf.fields[FIELD_FULL][0], GL_LUMINANCE, im->width, im->height, im->stride[0],
+              im->bpp, im->plane[0]);
+
+    LoadPlane(buf.fields[FIELD_FULL][1], GL_LUMINANCE, im->width >> im->cshift_x,
+              im->height >> im->cshift_y, im->stride[1], im->bpp, im->plane[1]);
+
+    LoadPlane(buf.fields[FIELD_FULL][2], GL_ALPHA, im->width >> im->cshift_x,
+              im->height >> im->cshift_y, im->stride[2], im->bpp, im->plane[2]);
+  }
 
   VerifyGLState();
 
@@ -1516,7 +1567,8 @@ bool CLinuxRendererGLES::CreateYV12Texture(int index)
 {
   // since we also want the field textures, pitch must be texture aligned
   unsigned p;
-  YuvImage &im = m_buffers[index].image;
+  CPictureBuffer& buf = m_buffers[index];
+  YuvImage& im = buf.image;
 
   DeleteYV12Texture(index);
 
@@ -1524,7 +1576,11 @@ bool CLinuxRendererGLES::CreateYV12Texture(int index)
   im.width = m_sourceWidth;
   im.cshift_x = 1;
   im.cshift_y = 1;
-  im.bpp = 1;
+
+  // Bit depth comes from libavutil's public pixdesc API, avoiding a parallel switch.
+  const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(m_format);
+  buf.m_srcTextureBits = desc ? desc->comp[0].depth : 8;
+  im.bpp = (buf.m_srcTextureBits > 8) ? 2 : 1;
 
   im.stride[0] = im.bpp * im.width;
   im.stride[1] = im.bpp * (im.width >> im.cshift_x);
@@ -1581,17 +1637,28 @@ bool CLinuxRendererGLES::CreateYV12Texture(int index)
 
       glBindTexture(m_textureTarget, plane.id);
 
-      GLint format;
-      if (p == 2) // V plane needs an alpha texture
+      if (im.bpp == 2)
       {
-        format = GL_ALPHA;
+#if defined(GL_R16_EXT)
+        glTexImage2D(m_textureTarget, 0, GL_R16_EXT, plane.texwidth, plane.texheight, 0, GL_RED,
+                     GL_UNSIGNED_SHORT, nullptr);
+#else
+        CLog::Log(LOGERROR, "GLES: GL_R16_EXT undefined; cannot render >8-bit YUV");
+        return false;
+#endif
       }
       else
       {
-        format = GL_LUMINANCE;
+        GLint format;
+        if (p == 2) // V plane needs an alpha texture
+          format = GL_ALPHA;
+        else
+          format = GL_LUMINANCE;
+
+        glTexImage2D(m_textureTarget, 0, format, plane.texwidth, plane.texheight, 0, format,
+                     GL_UNSIGNED_BYTE, nullptr);
       }
 
-      glTexImage2D(m_textureTarget, 0, format, plane.texwidth, plane.texheight, 0, format, GL_UNSIGNED_BYTE, nullptr);
       glTexParameteri(m_textureTarget, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
       glTexParameteri(m_textureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       glTexParameteri(m_textureTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -1904,7 +1971,7 @@ CRenderInfo CLinuxRendererGLES::GetRenderInfo()
 
 bool CLinuxRendererGLES::IsGuiLayer()
 {
-  return true;
+  return !m_hdrFboActive;
 }
 
 CRenderCapture* CLinuxRendererGLES::GetRenderCapture()

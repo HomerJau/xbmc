@@ -23,6 +23,7 @@
 
 extern "C" {
 #include <libavutil/mastering_display_metadata.h>
+#include <libavutil/pixdesc.h>
 }
 
 class CRenderCapture;
@@ -72,6 +73,7 @@ public:
   bool Flush(bool saveBuffers) override;
   void SetBufferSize(int numBuffers) override { m_NumYV12Buffers = numBuffers; }
   bool IsGuiLayer() override;
+  bool HasVideoPlane() override { return false; }
   void ReleaseBuffer(int idx) override;
   void RenderUpdate(int index, int index2, bool clear, unsigned int flags, unsigned int alpha) override;
   void Update() override;
@@ -216,6 +218,10 @@ protected:
   // clear colour for "black" bars
   float m_clearColour{0.0f};
   CRect m_lastViewRect;
+
+  // HDR FBO compositing: when active, IsGuiLayer() returns false so
+  // video renders separately from GUI via RenderUpdateVideo()
+  bool m_hdrFboActive{false};
 
 private:
   void ClearBackBuffer();
