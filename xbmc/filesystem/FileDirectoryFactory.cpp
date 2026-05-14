@@ -252,6 +252,13 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
 
   if (pItem->IsAudioBook() || pItem->IsMatroskaAudio())
   {
+    // If the file is already scanned into the music DB, chapter offsets,
+    // durations and tags are on the FileItem / in the DB. Skip the FFmpeg
+    // probe in ContainsFiles() that otherwise stalls Play() for several
+    // seconds (especially over SMB/NFS).
+    if (CAudioBookFileDirectory::HasChaptersInDatabase(url))
+      return nullptr;
+
     if (!pItem->HasMusicInfoTag() || pItem->GetEndOffset() <= 0)
     {
       std::unique_ptr<CAudioBookFileDirectory> pDir(new CAudioBookFileDirectory);
@@ -274,7 +281,7 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
             return pDir.release();
       }
     }
-    return NULL;
+    return nullptr;
   }
   return NULL;
 }
