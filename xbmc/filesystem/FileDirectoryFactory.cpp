@@ -8,6 +8,7 @@
 
 #include "FileDirectoryFactory.h"
 
+#include "music/MusicDatabase.h"
 #include "music/MusicFileItemClassify.h"
 
 #if defined(HAS_ISO9660PP)
@@ -47,6 +48,38 @@ using namespace KODI;
 using namespace KODI::ADDONS;
 using namespace XFILE;
 using namespace PLAYLIST;
+
+namespace
+{
+/*!
+ * Return true if the file already has multiple chapter/song rows in the music DB
+ * (i.e. has been scanned by CAudioBookFileDirectory previously). Used to skip the
+ * FFmpeg probe in ContainsFiles() that otherwise stalls Play() for several seconds,
+ * especially over SMB/NFS.
+ */
+bool HasChaptersInMusicDb(const CURL& url)
+{
+  CMusicDatabase db;
+  if (!db.Open())
+    return false;
+
+  const std::string strPath = URIUtils::GetDirectory(url.Get());
+  const std::string strFileName = URIUtils::GetFileName(url.Get());
+
+  // PrepareSQL uses mprintf-style %s substitution that escapes single quotes
+  // (and other SQL metacharacters) safely, so apostrophes in paths or filenames
+  // are handled and there is no SQL injection surface here.
+  const std::string sql = db.PrepareSQL(
+      "SELECT COUNT(*) FROM song "
+      "JOIN path ON song.idPath = path.idPath "
+      "WHERE path.strPath = '%s' AND song.strFileName = '%s'",
+      strPath.c_str(), strFileName.c_str());
+
+  const int count = db.GetSingleValueInt(sql);
+  db.Close();
+  return count > 1;
+}
+} // namespace
 
 CFileDirectoryFactory::CFileDirectoryFactory(void) = default;
 
@@ -252,11 +285,7 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
 
   if (pItem->IsAudioBook() || pItem->IsMatroskaAudio())
   {
-    // If the file is already scanned into the music DB, chapter offsets,
-    // durations and tags are on the FileItem / in the DB. Skip the FFmpeg
-    // probe in ContainsFiles() that otherwise stalls Play() for several
-    // seconds (especially over SMB/NFS).
-    if (CAudioBookFileDirectory::HasChaptersInDatabase(url))
+    if (HasChaptersInMusicDb(url))
       return nullptr;
 
     if (!pItem->HasMusicInfoTag() || pItem->GetEndOffset() <= 0)
