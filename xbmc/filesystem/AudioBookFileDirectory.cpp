@@ -154,11 +154,8 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   {
     albumtag.SetBitRate(codec_info.bitRate);
     albumtag.SetSampleRate(codec_info.sampleRate);
-    /*!
-    * Additional Music properties (next PR - Add Album Codec Support to Music)
-    * albumtag.SetBitsPerSample(codec_info.bitsPerSample);
-    * albumtag.SetCodec(codec_info.codecName); // e.g. 'truehd_atmos', 'dts_ma', 'dts_hd', etc
-    */
+    albumtag.SetBitsPerSample(codec_info.bitsPerSample);
+    albumtag.SetCodec(codec_info.codecName); // e.g. 'truehd_atmos', 'dts_ma', 'dts_hd', etc
     albumtag.SetNoOfChannels(codec_info.channels);
     albumtag.SetDuration(codec_info.duration);
   }

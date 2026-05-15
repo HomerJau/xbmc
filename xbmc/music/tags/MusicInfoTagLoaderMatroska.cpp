@@ -186,11 +186,8 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   {
     tag.SetBitRate(codec_info.bitRate);
     tag.SetSampleRate(codec_info.sampleRate);
-    /*!
-    * Additional Music properties (next PR)
-    * albumtag.SetBitsPerSample(codec_info.bitsPerSample);
-    * albumtag.SetCodec(codec_info.codecName); // e.g. 'truehd_atmos', 'dts_ma', 'dts_hd', etc
-    */
+    tag.SetBitsPerSample(codec_info.bitsPerSample);
+    tag.SetCodec(codec_info.codecName); // e.g. 'truehd_atmos', 'dts_ma', 'dts_hd', etc
     tag.SetNoOfChannels(codec_info.channels);
     tag.SetDuration(codec_info.duration);
   }
