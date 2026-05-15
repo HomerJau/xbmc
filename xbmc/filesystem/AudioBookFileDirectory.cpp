@@ -101,11 +101,6 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   if (musicsep.find_first_of(";/,&|#") == std::string::npos)
     separators.push_back(musicsep); // add custom music separator from as.xml
 
-  // FIX: Guard streams[0] access � crash if file has no streams
-  const int end_time_m4b_file = (m_fctx->nb_streams > 0) ? m_fctx->streams[0]->duration *
-                                                               av_q2d(m_fctx->streams[0]->time_base)
-                                                         : 0;
-
   const bool isAudioBook = url.IsFileType("m4b");
   // Some tags are relevant to the whole album - these are read first
   CMusicInfoTag albumtag;
@@ -177,8 +172,9 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   {
     if (!m_fctx->chapters[i] || m_fctx->chapters[i]->start < 0) // null or negative start time
       continue;
-    chapter_size = m_fctx->chapters[i]->end * av_q2d(m_fctx->chapters[i]->time_base);
-    if (chapter_size < 1 && chapter_size > 0) // Chapter must have positive time of more than 1 sec
+    chapter_size = (m_fctx->chapters[i]->end - m_fctx->chapters[i]->start) *
+                   av_q2d(m_fctx->chapters[i]->time_base);
+    if (chapter_size < 1) // Chapter must have positive time of more than 1 sec
     {
       CLog::Log(LOGWARNING,
                 "CAudioBookFileDirectory: Tiny chapter of size {}s detected when scanning {} Most "
@@ -214,6 +210,13 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
       item->GetMusicInfoTag()->SetArtist(chapauthor.empty() ? author : chapauthor);
       if (!desc.empty())
         item->GetMusicInfoTag()->SetComment(desc);
+
+      item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(
+          m_fctx->chapters[i]->start * av_q2d(m_fctx->chapters[i]->time_base)));
+      item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(
+          m_fctx->chapters[i]->end * av_q2d(m_fctx->chapters[i]->time_base)));
+      item->GetMusicInfoTag()->SetDuration(
+          CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
     }
     else
     {
@@ -271,6 +274,9 @@ int CAudioBookFileDirectory::GetSongCountFromDatabase(const CURL& url)
     std::string strPath = URIUtils::GetDirectory(url.Get());
     std::string strFileName = URIUtils::GetFileName(url.Get());
 
+    // db.PrepareSQL() uses mprintf-style %s substitution that escapes single
+    // quotes (and other SQL metacharacters) safely, so apostrophes in paths
+    // or filenames are handled and there is no SQL injection surface here.
     std::string sql = db.PrepareSQL("SELECT COUNT(*) FROM song "
         "JOIN path ON song.idPath = path.idPath "
         "WHERE path.strPath = '%s' AND song.strFileName = '%s'",
@@ -292,7 +298,7 @@ bool CAudioBookFileDirectory::Exists(const CURL& url)
     if (dbSongCount > 1)
         return true;
     if (dbSongCount >= 0)
-        return false; // 0 or 1 songs � not a multi-chapter audiobook
+        return false; // 0 or 1 songs - not a multi-chapter audiobook
 
     // DB unavailable (-1). Return false to avoid blocking playback.
     // The file will be properly detected during library scan when the DB
@@ -313,10 +319,25 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
   if (!file.Open(url))
     return false;
 
-  uint8_t* buffer = (uint8_t*)av_malloc(32768);
+  uint8_t* buffer = static_cast<uint8_t*>(av_malloc(32768));
+  if (!buffer)
+    return false;
+
   m_ioctx = avio_alloc_context(buffer, 32768, 0, &file, cfile_file_read, nullptr, cfile_file_seek);
+  if (!m_ioctx)
+  {
+    av_free(buffer);
+    return false;
+  }
 
   m_fctx = avformat_alloc_context();
+  if (!m_fctx)
+  {
+    av_free(m_ioctx->buffer);
+    av_free(m_ioctx);
+    m_ioctx = nullptr;
+    return false;
+  }
   m_fctx->pb = m_ioctx;
   m_fctx->flags |= AVFMT_FLAG_CUSTOM_IO;
 
@@ -336,6 +357,7 @@ bool CAudioBookFileDirectory::ContainsFiles(const CURL& url)
       avformat_close_input(&m_fctx);
     av_free(m_ioctx->buffer);
     av_free(m_ioctx);
+    m_ioctx = nullptr;
     return false;
   }
   m_fctx->flags |= AVFMT_FLAG_NOPARSE;

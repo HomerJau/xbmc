@@ -9,9 +9,10 @@
 #include "MusicEmbeddedCoverLoaderFFmpeg.h"
 
 #include "cores/FFmpeg.h"
-#include "filesystem/File.h"    
+#include "filesystem/File.h"
 #include "tags/MusicInfoTag.h"
 #include "utils/EmbeddedArt.h"
+#include <map>
 #include <string>
 
 using namespace MUSIC_INFO;
@@ -78,6 +79,9 @@ bool CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(const std::string& strFil
     bufferSize = blockSize;
 
   uint8_t* buffer = static_cast<uint8_t*>(av_malloc(bufferSize));
+  if (!buffer)
+    return false;
+
   AVIOContext* ioctx =
       avio_alloc_context(buffer, bufferSize, 0, &file, vfs_file_read, nullptr, vfs_file_seek);
   if (!ioctx)

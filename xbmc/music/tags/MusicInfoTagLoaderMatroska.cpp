@@ -26,7 +26,7 @@
 #include <taglib/matroskafile.h>
 #include <taglib/matroskasimpletag.h>
 #include <taglib/matroskatag.h>
-#include <taglib/tlist.tcc>
+#include <taglib/tlist.h>
 #include <taglib/tstring.h>
 
 #include <algorithm>
@@ -35,6 +35,7 @@
 #include <exception>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -127,7 +128,7 @@ static bool AppendIfNotDuplicate(std::string& currentValue,
 }
 
 /*!
-* Used by Matroska files with no chapters (most comon) or with a single (one song)
+* Used by Matroska files with no chapters (most common) or with a single (one song)
 * Typically these are Matroska files split by Chapter start times with each chapter having
 * song tags but no chapter name or chapter tags.
 */
@@ -420,19 +421,17 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
   chapterTags.clear();
   chapterOrder.clear();
 
-  TagLib::Matroska::File* matroskaFile = nullptr;
+  std::unique_ptr<TagLib::Matroska::File> matroskaFile;
   Matroska::Tag* matroskatag = nullptr;
   try
   {
     // MatroskaTagLibStream provides a 512 KiB read-ahead buffer and deferred seeks
-    matroskaFile = new TagLib::Matroska::File(&matroskaStream, true, TagLib::AudioProperties::Fast);
+    matroskaFile = std::make_unique<TagLib::Matroska::File>(
+        &matroskaStream, true, TagLib::AudioProperties::Fast);
     if (matroskaFile->isValid())
       matroskatag = matroskaFile->tag(true);
     if (!matroskatag)
-    {
-      delete matroskaFile;
       return;
-    }
     
     /* 
     * Read embedded cover art from attachments (performance issue in Taglib 2.3 need to be resolved
@@ -470,7 +469,7 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
           // Skip micro chapters less than 1 second long
           long long durationNs = std::abs(static_cast<long long>(chapter.timeEnd()) -
                                           static_cast<long long>(chapter.timeStart()));
-          if (durationNs <= 1000000000LL)
+          if (durationNs < 1000000000LL)
             continue;
 
           std::string chapterName;
@@ -734,13 +733,11 @@ void CMusicInfoTagLoaderMatroska::GetMatroskaMusicTags(
       }
     }
 
-    // bufferedStream will be destroyed when scope exits.
-    delete matroskaFile;
+    // bufferedStream and matroskaFile are destroyed when scope exits.
   }
   catch (const std::exception& e)
   {
     CLog::Log(LOGERROR, "GetMatroskaMusicTags: Exception while reading Matroska tags: {} {}",
               fileName, e.what());
-    delete matroskaFile;
   }
 }

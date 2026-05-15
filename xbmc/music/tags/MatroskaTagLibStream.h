@@ -48,7 +48,20 @@ class MatroskaTagLibStream : public TagLib::IOStream
 {
 public:
   MatroskaTagLibStream(const std::string& fileName) : m_fileName(fileName) {}
-  ~MatroskaTagLibStream() override { if (m_open) m_file.Close(); }
+  ~MatroskaTagLibStream() override
+  {
+    if (m_open)
+    {
+      try
+      {
+        m_file.Close();
+      }
+      catch (...)
+      {
+        // never propagate exceptions out of a destructor
+      }
+    }
+  }
 
   TagLib::FileName name() const override { return m_fileName.c_str(); }
 

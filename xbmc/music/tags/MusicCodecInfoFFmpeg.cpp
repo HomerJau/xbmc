@@ -69,7 +69,7 @@ bool CMusicCodecInfoFFmpeg::GetMusicCodecInfo(const std::string& strFileName,
   av_probe_input_buffer(ioctx, &iformat, strFileName.c_str(), nullptr, 0, 0);
 
   AVStream* st = nullptr;
-  if (avformat_open_input(&fctx, strFileName.c_str(), nullptr, nullptr) == 0)
+  if (avformat_open_input(&fctx, strFileName.c_str(), iformat, nullptr) == 0)
   {
     fctx->flags |= AVFMT_FLAG_NOPARSE;
     if (avformat_find_stream_info(fctx, nullptr) >= 0)
@@ -99,70 +99,75 @@ bool CMusicCodecInfoFFmpeg::GetMusicCodecInfo(const std::string& strFileName,
         }
       }
 
-      if (streamIndex == -1)
-        return haveInfo; // didn't find an audio stream so just exit
-      st = fctx->streams[streamIndex];
-      decoder = avcodec_find_decoder(st->codecpar->codec_id);
-      if (decoder)
+      if (streamIndex != -1)
       {
-        std::string codec_name = "unknown";
-
-        codec_name = avcodec_get_name(st->codecpar->codec_id);
-        int par_profile = st->codecpar->profile;
-        if (st->codecpar->codec_id == AV_CODEC_ID_DTS)
+        st = fctx->streams[streamIndex];
+        decoder = avcodec_find_decoder(st->codecpar->codec_id);
+        if (decoder)
         {
-          switch (par_profile)
-          {
-            case AV_PROFILE_DTS_HD_MA_X:
-              codec_name = "dtshd_ma_x";
-              break;
-            case AV_PROFILE_DTS_HD_MA_X_IMAX:
-              codec_name = "dtshd_ma_x_imax";
-              break;
-            case AV_PROFILE_DTS_ES:
-              codec_name = "dts_es";
-              break;
-            case AV_PROFILE_DTS_96_24:
-              codec_name = "dts_96_24";
-              break;
-            case AV_PROFILE_DTS_HD_HRA:
-              codec_name = "dtshd_hra";
-              break;
-            case AV_PROFILE_DTS_EXPRESS:
-              codec_name = "dts_express";
-              break;
-            case AV_PROFILE_DTS_HD_MA:
-              codec_name = "dtshd_ma";
-              break;
-            default:
-              codec_name = "dca";
-              break;
-          }
-        }
-        if (st->codecpar->codec_id == AV_CODEC_ID_EAC3 && par_profile == AV_PROFILE_EAC3_DDP_ATMOS)
-          codec_name = "eac3_ddp_atmos";
+          std::string codec_name = "unknown";
 
-        if (st->codecpar->codec_id == AV_CODEC_ID_TRUEHD && par_profile == AV_PROFILE_TRUEHD_ATMOS)
-          codec_name = "truehd_atmos";
-        codec_info.codecName = codec_name;
-        codec_info.bitRate = static_cast<int>(st->codecpar->bit_rate / 1000);
-        codec_info.channels = st->codecpar->ch_layout.nb_channels;
-        codec_info.bitsPerSample = (st->codecpar->bits_per_coded_sample != 0)
-                                       ? st->codecpar->bits_per_coded_sample
-                                       : st->codecpar->bits_per_raw_sample;
-        codec_info.sampleRate = st->codecpar->sample_rate;
-        codec_info.duration = st->duration / AV_TIME_BASE;
-        haveInfo = true;
+          codec_name = avcodec_get_name(st->codecpar->codec_id);
+          int par_profile = st->codecpar->profile;
+          if (st->codecpar->codec_id == AV_CODEC_ID_DTS)
+          {
+            switch (par_profile)
+            {
+              case AV_PROFILE_DTS_HD_MA_X:
+                codec_name = "dtshd_ma_x";
+                break;
+              case AV_PROFILE_DTS_HD_MA_X_IMAX:
+                codec_name = "dtshd_ma_x_imax";
+                break;
+              case AV_PROFILE_DTS_ES:
+                codec_name = "dts_es";
+                break;
+              case AV_PROFILE_DTS_96_24:
+                codec_name = "dts_96_24";
+                break;
+              case AV_PROFILE_DTS_HD_HRA:
+                codec_name = "dtshd_hra";
+                break;
+              case AV_PROFILE_DTS_EXPRESS:
+                codec_name = "dts_express";
+                break;
+              case AV_PROFILE_DTS_HD_MA:
+                codec_name = "dtshd_ma";
+                break;
+              default:
+                codec_name = "dca";
+                break;
+            }
+          }
+          if (st->codecpar->codec_id == AV_CODEC_ID_EAC3 && par_profile == AV_PROFILE_EAC3_DDP_ATMOS)
+            codec_name = "eac3_ddp_atmos";
+
+          if (st->codecpar->codec_id == AV_CODEC_ID_TRUEHD && par_profile == AV_PROFILE_TRUEHD_ATMOS)
+            codec_name = "truehd_atmos";
+          codec_info.codecName = codec_name;
+          codec_info.bitRate = static_cast<int>(st->codecpar->bit_rate / 1000);
+          codec_info.channels = st->codecpar->ch_layout.nb_channels;
+          codec_info.bitsPerSample = (st->codecpar->bits_per_coded_sample != 0)
+                                         ? st->codecpar->bits_per_coded_sample
+                                         : st->codecpar->bits_per_raw_sample;
+          codec_info.sampleRate = st->codecpar->sample_rate;
+          // st->duration is in st->time_base units; rescale to whole seconds.
+          // Fall back to the container duration when the stream value is unset.
+          if (st->duration != AV_NOPTS_VALUE)
+            codec_info.duration =
+                static_cast<int>(av_rescale_q(st->duration, st->time_base, AVRational{1, 1}));
+          else if (fctx->duration != AV_NOPTS_VALUE)
+            codec_info.duration = static_cast<int>(fctx->duration / AV_TIME_BASE);
+          else
+            codec_info.duration = 0;
+          haveInfo = true;
+        }
       }
     }
 
-    if (fctx)
-      avformat_close_input(&fctx);
-    if (ioctx)
-    {
-      av_free(ioctx->buffer);
-      av_free(ioctx);
-    }
+    avformat_close_input(&fctx);
   }
+  av_free(ioctx->buffer);
+  av_free(ioctx);
   return haveInfo;
 }
