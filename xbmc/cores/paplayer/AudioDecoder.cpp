@@ -274,8 +274,23 @@ int CAudioDecoder::ReadSamples(int numsamples)
         // move it into our buffer
         m_pcmBuffer.WriteData((char *)m_pcmInputBuffer, readSize);
 
-        // update status
-        if (m_status == STATUS_QUEUING && m_pcmBuffer.getMaxReadSize() > m_pcmBuffer.getSize() * 0.9)
+        // Declare queued once we have a fixed amount of decoded PCM ready.
+        // Time-based (not a percentage of the 2-s buffer) so startup latency is
+        // decoupled from buffer-capacity choices: enlarging the buffer for
+        // playback resilience does not silently increase the play-start delay.
+        // The original threshold required 90% of the 2-s buffer (~1.8 s of PCM)
+        // which on multichannel hi-res content (Atmos/TrueHD) over NFS at a
+        // chapter offset took ~4 s to fill. VideoPlayer has no equivalent
+        // threshold and starts on the first decoded frame; this brings PaPlayer
+        // closer to that feel without sacrificing the resilience the remaining
+        // buffer-fill provides during playback.
+        constexpr unsigned int STARTUP_BUFFER_MS = 200;
+        const unsigned int startThresholdBytes =
+            (STARTUP_BUFFER_MS * (m_codec->m_bitsPerSample >> 3) *
+             m_codec->m_format.m_channelLayout.Count() *
+             m_codec->m_format.m_sampleRate) / 1000;
+
+        if (m_status == STATUS_QUEUING && m_pcmBuffer.getMaxReadSize() > startThresholdBytes)
         {
           CLog::Log(LOGINFO, "AudioDecoder: File is queued");
           m_status = STATUS_QUEUED;
