@@ -135,7 +135,7 @@ bool CMusicCodecInfoFFmpeg::GetMusicCodecInfo(const std::string& strFileName,
                 codec_name = "dtshd_ma";
                 break;
               default:
-                codec_name = "dca";
+                codec_name = "dts";
                 break;
             }
           }

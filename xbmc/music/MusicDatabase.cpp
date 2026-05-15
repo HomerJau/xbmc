@@ -9417,6 +9417,9 @@ void CMusicDatabase::UpdateTables(int version)
     m_pDS->exec("ALTER TABLE song ADD strCodec TEXT");
   }
 
+  if (version < 85) // upstream PR #28140 renamed the DTS codec from 'dca' to 'dts'
+    m_pDS->exec("UPDATE song SET strCodec = 'dts' WHERE strCodec = 'dca'");
+
   // Set the version of tag scanning required.
   // Not every schema change requires the tags to be rescanned, set to the highest schema version
   // that needs this. Forced rescanning (of music files that have not changed since they were
@@ -9437,7 +9440,7 @@ void CMusicDatabase::UpdateTables(int version)
 
 int CMusicDatabase::GetSchemaVersion() const
 {
-  return 84;
+  return 85;
 }
 
 int CMusicDatabase::GetMusicNeedsTagScan()
