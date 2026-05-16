@@ -34,6 +34,7 @@ CAudioDecoder::CAudioDecoder()
 
   m_status = STATUS_NO_FILE;
   m_canPlay = false;
+  m_startThresholdBytes = 0;
 
   // output buffer (for transferring data from the Pcm Buffer to the rest of the audio chain)
   memset(&m_outputBuffer, 0, OUTPUT_SAMPLES * sizeof(float));
@@ -130,6 +131,17 @@ bool CAudioDecoder::Create(const CFileItem &file, int64_t seekOffset)
 
   if (seekOffset)
     m_codec->Seek(seekOffset);
+
+  // Pre-compute the startup-buffer threshold once. Format is immutable for the
+  // lifetime of m_codec, so the per-packet recomputation in ReadSamples is
+  // wasted work. 64-bit intermediate prevents wrap for extreme hi-res
+  // multichannel (see ReadSamples for the original sizing rationale).
+  constexpr unsigned int STARTUP_BUFFER_MS = 200;
+  m_startThresholdBytes = (static_cast<uint64_t>(STARTUP_BUFFER_MS) *
+                           static_cast<uint64_t>(m_codec->m_bitsPerSample >> 3) *
+                           static_cast<uint64_t>(m_codec->m_format.m_channelLayout.Count()) *
+                           static_cast<uint64_t>(m_codec->m_format.m_sampleRate)) /
+                          1000;
 
   m_status = STATUS_QUEUING;
 
@@ -283,18 +295,9 @@ int CAudioDecoder::ReadSamples(int numsamples)
         // chapter offset took ~4 s to fill. VideoPlayer has no equivalent
         // threshold and starts on the first decoded frame; this brings PaPlayer
         // closer to that feel without sacrificing the resilience the remaining
-        // buffer-fill provides during playback.
-        constexpr unsigned int STARTUP_BUFFER_MS = 200;
-        // 64-bit intermediate: 32-bit can wrap for extreme hi-res multichannel
-        // (e.g. 32-bit/16ch/384 kHz: 200 * 4 * 16 * 384000 ~= 4.92e9 > UINT_MAX).
-        const uint64_t startThresholdBytes =
-            (static_cast<uint64_t>(STARTUP_BUFFER_MS) *
-             static_cast<uint64_t>(m_codec->m_bitsPerSample >> 3) *
-             static_cast<uint64_t>(m_codec->m_format.m_channelLayout.Count()) *
-             static_cast<uint64_t>(m_codec->m_format.m_sampleRate)) /
-            1000;
-
-        if (m_status == STATUS_QUEUING && m_pcmBuffer.getMaxReadSize() > startThresholdBytes)
+        // buffer-fill provides during playback. Threshold is computed once in
+        // Create() since the contributing format values are immutable.
+        if (m_status == STATUS_QUEUING && m_pcmBuffer.getMaxReadSize() > m_startThresholdBytes)
         {
           CLog::Log(LOGINFO, "AudioDecoder: File is queued");
           m_status = STATUS_QUEUED;

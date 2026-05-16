@@ -300,11 +300,14 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
         !IsUnderMusicSource(url.Get()))
       return nullptr;
 
-    if (HasChaptersInMusicDb(url))
-      return nullptr;
-
+    // Already-expanded chapter rows (have a music tag and a positive end offset)
+    // are going to return nullptr regardless, so skip the music-DB open for them
+    // and only consult the DB on the not-yet-expanded path where it gates the
+    // expensive FFmpeg ContainsFiles() probe.
     if (!pItem->HasMusicInfoTag() || pItem->GetEndOffset() <= 0)
     {
+      if (HasChaptersInMusicDb(url))
+        return nullptr;
       auto pDir = std::make_unique<CAudioBookFileDirectory>();
       if (pDir->ContainsFiles(url))
         return pDir.release();
