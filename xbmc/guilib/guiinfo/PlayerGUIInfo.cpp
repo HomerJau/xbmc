@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2012-2018 Team Kodi
+ *  Copyright (C) 2012-2026 Team Kodi
  *  This file is part of Kodi - https://kodi.tv
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
@@ -368,6 +368,9 @@ bool CPlayerGUIInfo::GetLabel(std::string& value, const CFileItem *item, int con
       return true;
     case PLAYER_PROCESS_AUDIOBITSPERSAMPLE:
       value = StringUtils::FormatNumber(CServiceBroker::GetDataCacheCore().GetAudioBitsPerSample());
+      return true;
+    case PLAYER_PROCESS_SUBTITLEDECODER:
+      value = CServiceBroker::GetDataCacheCore().GetSubtitleDecoderName();
       return true;
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -742,8 +745,14 @@ std::vector<std::pair<float, float>> CPlayerGUIInfo::GetCuts(const CDataCacheCor
   float lastMarker = 0.0f;
   for (const auto& cut : cuts)
   {
-    float marker = cut.count() * 100.0f / duration;
-    if (marker != 0)
+    float marker = static_cast<float>(cut.count()) * 100.0f / static_cast<float>(duration);
+
+    if (marker >= 100.0f)
+      // Cut at or beyond end, no mark needed
+      // Break as cuts stored in time order
+      break;
+
+    if (marker != 0.0f)
       ranges.emplace_back(lastMarker, marker);
 
     lastMarker = marker;
