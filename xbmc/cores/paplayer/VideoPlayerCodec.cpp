@@ -244,10 +244,19 @@ bool VideoPlayerCodec::Init(const CFileItem &file, unsigned int filecache)
     // at this point - so compute it as a fallback instead of failing silently.
     if (m_srcFormat.m_frameSize == 0)
     {
+      // The fallback only handles interleaved formats: the downstream divisor
+      // in ReadPCM (m_frameSize / m_channels) assumes interleaved layout, and
+      // for planar the per-plane sample width is too small to safely divide by
+      // m_channels (e.g. 8-bit planar stereo would integer-divide to 0).
+      // Bail out for planar - preserves pre-existing behavior for that path.
+      if (AE_IS_PLANAR(m_srcFormat.m_dataFormat))
+        return false;
       const unsigned int bytesPerSample = CAEUtil::DataFormatToBits(m_srcFormat.m_dataFormat) >> 3;
-      m_srcFormat.m_frameSize = AE_IS_PLANAR(m_srcFormat.m_dataFormat)
-                                    ? bytesPerSample
-                                    : bytesPerSample * m_channels;
+      // Also bail if bits-per-sample is <8: a zero frame size would propagate
+      // to ReadPCM and divide-by-zero on m_frameSize.
+      if (bytesPerSample == 0)
+        return false;
+      m_srcFormat.m_frameSize = bytesPerSample * m_channels;
     }
 
     m_pResampler = ActiveAE::CAEResampleFactory::Create();

@@ -51,6 +51,15 @@ using namespace PLAYLIST;
 
 namespace
 {
+bool IsUnderMusicSource(const std::string& path)
+{
+  auto* sources = CMediaSourceSettings::GetInstance().GetSources("music");
+  if (!sources)
+    return false;
+  bool isSourceName = false;
+  return CUtil::GetMatchingSource(path, *sources, isSourceName) > -1;
+}
+
 /*!
  * Return true if the file already has multiple chapter/song rows in the music DB
  * (i.e. has been scanned by CAudioBookFileDirectory previously). Used to skip the
@@ -69,11 +78,10 @@ bool HasChaptersInMusicDb(const CURL& url)
   // PrepareSQL uses mprintf-style %s substitution that escapes single quotes
   // (and other SQL metacharacters) safely, so apostrophes in paths or filenames
   // are handled and there is no SQL injection surface here.
-  const std::string sql = db.PrepareSQL(
-      "SELECT COUNT(*) FROM song "
-      "JOIN path ON song.idPath = path.idPath "
-      "WHERE path.strPath = '%s' AND song.strFileName = '%s'",
-      strPath.c_str(), strFileName.c_str());
+  const std::string sql = db.PrepareSQL("SELECT COUNT(*) FROM song "
+                                        "JOIN path ON song.idPath = path.idPath "
+                                        "WHERE path.strPath = '%s' AND song.strFileName = '%s'",
+                                        strPath.c_str(), strFileName.c_str());
 
   const int count = db.GetSingleValueInt(sql);
   db.Close();
@@ -283,32 +291,23 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
     return NULL;
   }
 
-  if (pItem->IsAudioBook() || pItem->IsMatroskaAudio())
+  if (MUSIC::IsAudioBook(*pItem) || strExtension == ".mp4")
   {
+    // .mkv and .mp4 double as video containers — only treat a chaptered .mkv
+    // or .mp4 as an audiobook when browsed from a Music source, or a chaptered
+    // movie in a Video source would be expanded into chapter items.
+    if ((strExtension == ".mkv" || strExtension == ".mp4") &&
+        !IsUnderMusicSource(url.Get()))
+      return nullptr;
+
     if (HasChaptersInMusicDb(url))
       return nullptr;
 
     if (!pItem->HasMusicInfoTag() || pItem->GetEndOffset() <= 0)
     {
-      std::unique_ptr<CAudioBookFileDirectory> pDir(new CAudioBookFileDirectory);
-        if (pDir->ContainsFiles(url))
-          return pDir.release();
-    }
-    return NULL;
-  }
-  else if (pItem->IsMatroskaVideo() || url.IsFileType("mp4"))
-  {
-    std::vector<CMediaSource>* musicSources = CMediaSourceSettings::GetInstance().GetSources("music");
-    bool isSource;
-    int sourceIndex = CUtil::GetMatchingSource(pItem->GetPath(), *musicSources, isSource);
-    if (sourceIndex >= 0 && sourceIndex < static_cast<int>(musicSources->size()))
-    {
-       if (!pItem->HasMusicInfoTag() || pItem->GetEndOffset() <= 0)
-      {
-        std::unique_ptr<CAudioBookFileDirectory> pDir(new CAudioBookFileDirectory);
-          if (pDir->ContainsFiles(url))
-            return pDir.release();
-      }
+      auto pDir = std::make_unique<CAudioBookFileDirectory>();
+      if (pDir->ContainsFiles(url))
+        return pDir.release();
     }
     return nullptr;
   }

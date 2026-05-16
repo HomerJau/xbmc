@@ -7,13 +7,14 @@
  */
 
 #include "AudioBookFileDirectory.h"
+
 #include "FileItem.h"
 #include "FileItemList.h"
 #include "IFileTypes.h"
 #include "ServiceBroker.h"
-
 #include "URL.h"
 #include "Util.h"
+#include "dbwrappers/Database.h"
 #include "filesystem/File.h"
 #include "imagefiles/ImageFileURL.h"
 #include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
@@ -21,20 +22,17 @@
 #include "music/tags/MusicInfoTag.h"
 #include "music/tags/MusicInfoTagLoaderMatroska.h"
 #include "resources/LocalizeStrings.h"
-#include "imagefiles/ImageFileURL.h"
-#include "music/tags/MusicInfoTag.h"
-#include "music/MusicDatabase.h"
-#include "music/MusicEmbeddedCoverLoaderFFmpeg.h"
-#include "music/tags/MusicCodecInfoFFmpeg.h"
-#include "music/tags/MusicInfoTagLoaderMatroska.h"
 #include "resources/ResourcesComponent.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/SettingsComponent.h"
 #include "utils/StringUtils.h"
+#include "utils/URIUtils.h"
 #include "utils/log.h"
-#include "utils/StringUtils.h"
 
+#include <cstdint>
 #include <map>
+#include <memory>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -44,13 +42,6 @@
 #include <libavutil/dict.h>
 #include <libavutil/mem.h>
 #include <libavutil/rational.h>
-
-#include <cstdint>
-#include <map>
-#include <memory>
-#include <string>
-#include <tuple>
-#include <vector>
 
 using namespace XFILE;
 using namespace MUSIC_INFO;
@@ -143,10 +134,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   * This can be dropped when taglib 2.3.1 is released with the embedded cover art performance
   * fix for Matroska files and we can just use TagLib to read the embedded cover art for Matroska
   * files. Until then, we need to use FFmpeg to read the embedded cover art for Matroska files.
-  */ 
+  */
   CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(m_fctx, albumtag);
 
- // now get the AudioCodec -------------------------------------
+  // now get the AudioCodec -------------------------------------
   bool haveFFmpegInfo = false;
   musicCodecInfo codec_info;
   haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(url.Get(), codec_info);
@@ -186,17 +177,17 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
 
     std::shared_ptr<CFileItem> item(new CFileItem(url.Get(), false));
     *item->GetMusicInfoTag() = albumtag;
- 
+
     if (isAudioBook)
     {
       while ((tag = av_dict_get(m_fctx->chapters[i]->metadata, "", tag, AV_DICT_IGNORE_SUFFIX)))
       {
         if (StringUtils::CompareNoCase(tag->key, "title") == 0)
-           chaptitle = tag->value;
+          chaptitle = tag->value;
         else if (StringUtils::CompareNoCase(tag->key, "artist") == 0)
-           chapauthor = tag->value;
+          chapauthor = tag->value;
         else if (StringUtils::CompareNoCase(tag->key, "album") == 0)
-           chapalbum = tag->value;
+          chapalbum = tag->value;
       }
       item->GetMusicInfoTag()->SetTitle(chaptitle);
       item->GetMusicInfoTag()->SetAlbum(chapalbum.empty() ? album.empty() ? title : album
@@ -205,10 +196,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
       if (!desc.empty())
         item->GetMusicInfoTag()->SetComment(desc);
 
-      item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(
-          m_fctx->chapters[i]->start * av_q2d(m_fctx->chapters[i]->time_base)));
-      item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(
-          m_fctx->chapters[i]->end * av_q2d(m_fctx->chapters[i]->time_base)));
+      item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->start *
+                                                         av_q2d(m_fctx->chapters[i]->time_base)));
+      item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(m_fctx->chapters[i]->end *
+                                                       av_q2d(m_fctx->chapters[i]->time_base)));
       item->GetMusicInfoTag()->SetDuration(
           CUtil::ConvertMilliSecsToSecsInt(item->GetEndOffset() - item->GetStartOffset()));
     }
@@ -221,11 +212,8 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
         if (it != chapterTags.end())
         {
           for (const auto& Tracktag : it->second)
-            CMusicInfoTagLoaderMatroska::ParseTag(Tracktag.first,
-                                                   Tracktag.second,
-                                                   separators,
-                                                   musicsep,
-                                                   *item->GetMusicInfoTag());
+            CMusicInfoTagLoaderMatroska::ParseTag(Tracktag.first, Tracktag.second, separators,
+                                                  musicsep, *item->GetMusicInfoTag());
 
           item->SetStartOffset(CUtil::ConvertSecsToMilliSecs(std::get<2>(chapterOrder[i])));
           item->SetEndOffset(CUtil::ConvertSecsToMilliSecs(std::get<3>(chapterOrder[i])));
@@ -234,13 +222,13 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
         }
       }
     }
- 
+
     item->GetMusicInfoTag()->SetTrackNumber(i + 1);
     item->GetMusicInfoTag()->SetLoaded(true);
 
     item->SetLabel(StringUtils::Format("{0:02}. {1} - {2}", i + 1,
-                                         item->GetMusicInfoTag()->GetAlbum(),
-                                         item->GetMusicInfoTag()->GetTitle()));
+                                       item->GetMusicInfoTag()->GetAlbum(),
+                                       item->GetMusicInfoTag()->GetTitle()));
 
     item->SetProperty("item_start", item->GetStartOffset());
     item->SetProperty("audio_bookmark", item->GetStartOffset());

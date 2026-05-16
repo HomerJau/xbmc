@@ -12,6 +12,7 @@
 #include "filesystem/File.h"
 #include "tags/MusicInfoTag.h"
 #include "utils/EmbeddedArt.h"
+
 #include <map>
 #include <string>
 
@@ -32,8 +33,8 @@ void CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(AVFormatContext* fctx,
 
     AVCodecID pic_id = fctx_pic->codecpar->codec_id;
     const std::map<AVCodecID, std::string> mime_map = {{AV_CODEC_ID_MJPEG, "image/jpeg"},
-                                                                 {AV_CODEC_ID_PNG, "image/png"},
-                                                                 {AV_CODEC_ID_BMP, "image/bmp"}};
+                                                       {AV_CODEC_ID_PNG, "image/png"},
+                                                       {AV_CODEC_ID_BMP, "image/bmp"}};
 
     auto it = mime_map.find(pic_id);
     if (it != mime_map.end())
@@ -66,8 +67,8 @@ static int64_t vfs_file_seek(void* h, int64_t pos, int whence)
 }
 
 bool CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(const std::string& strFileName,
-                                                      CMusicInfoTag& tag,
-                                                      EmbeddedArt* art /* = nullptr */)
+                                                       CMusicInfoTag& tag,
+                                                       EmbeddedArt* art /* = nullptr */)
 {
   CFile file;
   if (!file.Open(strFileName))

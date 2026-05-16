@@ -285,10 +285,14 @@ int CAudioDecoder::ReadSamples(int numsamples)
         // closer to that feel without sacrificing the resilience the remaining
         // buffer-fill provides during playback.
         constexpr unsigned int STARTUP_BUFFER_MS = 200;
-        const unsigned int startThresholdBytes =
-            (STARTUP_BUFFER_MS * (m_codec->m_bitsPerSample >> 3) *
-             m_codec->m_format.m_channelLayout.Count() *
-             m_codec->m_format.m_sampleRate) / 1000;
+        // 64-bit intermediate: 32-bit can wrap for extreme hi-res multichannel
+        // (e.g. 32-bit/16ch/384 kHz: 200 * 4 * 16 * 384000 ~= 4.92e9 > UINT_MAX).
+        const uint64_t startThresholdBytes =
+            (static_cast<uint64_t>(STARTUP_BUFFER_MS) *
+             static_cast<uint64_t>(m_codec->m_bitsPerSample >> 3) *
+             static_cast<uint64_t>(m_codec->m_format.m_channelLayout.Count()) *
+             static_cast<uint64_t>(m_codec->m_format.m_sampleRate)) /
+            1000;
 
         if (m_status == STATUS_QUEUING && m_pcmBuffer.getMaxReadSize() > startThresholdBytes)
         {

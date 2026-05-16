@@ -10,18 +10,17 @@
 
 #include "filesystem/File.h"
 
-#include <PlatformDefs.h>
-
-#include <taglib/tbytevector.h>
-#include <taglib/taglib.h>
-#include <taglib/tiostream.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
+
+#include <PlatformDefs.h>
+#include <taglib/taglib.h>
+#include <taglib/tbytevector.h>
+#include <taglib/tiostream.h>
 
 /*!
  * VFS-backed TagLib IOStream adapter with read-ahead buffering.
@@ -125,7 +124,8 @@ public:
      */
     if (pos >= m_bufStart && pos < m_bufStart + static_cast<int64_t>(m_bufFill))
     {
-      const size_t prefix = static_cast<size_t>((m_bufStart + static_cast<int64_t>(m_bufFill)) - pos);
+      const size_t prefix =
+          static_cast<size_t>((m_bufStart + static_cast<int64_t>(m_bufFill)) - pos);
       TagLib::ByteVector bv(static_cast<unsigned int>(length));
       std::memcpy(bv.data(), m_buf.data() + (pos - m_bufStart), prefix);
       const int64_t tailPos = m_bufStart + static_cast<int64_t>(m_bufFill);
@@ -237,8 +237,8 @@ private:
     // Avoid asking the VFS backend to read past EOF: some SMB/NFS
     // implementations issue an extra round-trip in that case.
     const int64_t remaining = (m_fileLength > filePos) ? (m_fileLength - filePos) : 0;
-    const size_t toRead = static_cast<size_t>(
-        std::min<int64_t>(static_cast<int64_t>(kBufCapacity), remaining));
+    const size_t toRead =
+        static_cast<size_t>(std::min<int64_t>(static_cast<int64_t>(kBufCapacity), remaining));
     ssize_t bytesRead = (toRead > 0) ? m_file.Read(m_buf.data(), toRead) : 0;
     m_bufFill = (bytesRead > 0) ? static_cast<size_t>(bytesRead) : 0;
     m_filePos = filePos + static_cast<int64_t>(m_bufFill);
@@ -262,7 +262,6 @@ private:
    */
   int64_t m_virtualPos = 0;
 
- 
   // Tracks the real CFile position so we can skip redundant Seek calls.
   int64_t m_filePos = 0;
 

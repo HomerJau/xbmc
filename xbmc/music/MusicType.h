@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <string_view>      
+#include <string_view>
 
 class AudioType
 {
@@ -70,10 +70,7 @@ private:
   };
 
   static constexpr std::array releaseTypes{
-      ReleaseTypeInfo{Content::Album, "album"},
-      ReleaseTypeInfo{Content::Single, "single"},
+      ReleaseTypeInfo{Content::Album, "album"}, ReleaseTypeInfo{Content::Single, "single"},
       ReleaseTypeInfo{Content::AudioBook, "audiobook"},
-      ReleaseTypeInfo{Content::Podcast, "podcast"},
-      ReleaseTypeInfo{Content::Concert, "concert"}
-  };
+      ReleaseTypeInfo{Content::Podcast, "podcast"}, ReleaseTypeInfo{Content::Concert, "concert"}};
 };

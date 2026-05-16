@@ -18,7 +18,6 @@
 #include <tuple>
 #include <vector>
 
-
 namespace MUSIC_INFO
 {
 class CMusicInfoTagLoaderMatroska : public IMusicInfoTagLoader
