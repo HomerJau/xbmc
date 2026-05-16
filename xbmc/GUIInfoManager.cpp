@@ -7623,7 +7623,7 @@ constexpr std::array<InfoMap, 3> container_str = {{
 /// -----------------------------------------------------------------------------
 // clang-format off
 
-constexpr std::array<InfoMap, 231> listitem_labels = {{ 
+constexpr std::array<InfoMap, 230> listitem_labels = {{
                                   {"thumb",            LISTITEM_THUMB },
                                   { "icon",             LISTITEM_ICON },
                                   { "actualicon",       LISTITEM_ACTUAL_ICON },
@@ -7643,6 +7643,7 @@ constexpr std::array<InfoMap, 231> listitem_labels = {{
                                   { "disctitle",        LISTITEM_DISC_TITLE },
                                   { "filename",         LISTITEM_FILENAME },
                                   { "filenameandpath",  LISTITEM_FILENAME_AND_PATH },
+                                  { "decodedfilenameandpath",  LISTITEM_DECODED_FILENAME_AND_PATH },
                                   { "fileextension",    LISTITEM_FILE_EXTENSION },
                                   { "filenamenoextension",  LISTITEM_FILENAME_NO_EXTENSION },
                                   { "date",             LISTITEM_DATE },
@@ -7850,6 +7851,7 @@ constexpr std::array<InfoMap, 231> listitem_labels = {{
                                   { "episodepart",      LISTITEM_EPISODEPART },
                                   { "mediaproviders",   LISTITEM_MEDIAPROVIDERS },
                                   { "titleextrainfo",   LISTITEM_TITLE_EXTRAINFO },
+                                  { "hdrdetail",        LISTITEM_VIDEO_HDR_DETAIL },
                                   { "musicbitspersample", LISTITEM_MUSIC_BITSPERSAMPLE },
                                   { "musiccodec",       LISTITEM_MUSIC_CODEC },
 }};
