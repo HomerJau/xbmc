@@ -60,17 +60,16 @@ bool IsUnderMusicSource(const std::string& path)
   return CUtil::GetMatchingSource(path, *sources, isSourceName) > -1;
 }
 
-/*!
- * Return true if the file already has multiple chapter/song rows in the music DB
- * (i.e. has been scanned by CAudioBookFileDirectory previously). Used to skip the
- * FFmpeg probe in ContainsFiles() that otherwise stalls Play() for several seconds,
- * especially over SMB/NFS.
- */
-bool HasChaptersInMusicDb(const CURL& url)
+} // namespace
+
+namespace XFILE
+{
+
+int GetChaptersCountInMusicDb(const CURL& url)
 {
   CMusicDatabase db;
   if (!db.Open())
-    return false;
+    return 0;
 
   const std::string strPath = URIUtils::GetDirectory(url.Get());
   const std::string strFileName = URIUtils::GetFileName(url.Get());
@@ -85,9 +84,10 @@ bool HasChaptersInMusicDb(const CURL& url)
 
   const int count = db.GetSingleValueInt(sql);
   db.Close();
-  return count > 1;
+  return count;
 }
-} // namespace
+
+} // namespace XFILE
 
 CFileDirectoryFactory::CFileDirectoryFactory(void) = default;
 
@@ -306,7 +306,7 @@ IFileDirectory* CFileDirectoryFactory::Create(const CURL& url, CFileItem* pItem,
     // expensive FFmpeg ContainsFiles() probe.
     if (!pItem->HasMusicInfoTag() || pItem->GetEndOffset() <= 0)
     {
-      if (HasChaptersInMusicDb(url))
+      if (GetChaptersCountInMusicDb(url) > 1)
         return nullptr;
       auto pDir = std::make_unique<CAudioBookFileDirectory>();
       if (pDir->ContainsFiles(url))

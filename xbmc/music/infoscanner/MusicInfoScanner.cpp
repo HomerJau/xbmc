@@ -29,6 +29,7 @@
 #include "events/EventLog.h"
 #include "events/MediaLibraryEvent.h"
 #include "filesystem/Directory.h"
+#include "filesystem/FileDirectoryFactory.h"
 #include "filesystem/MusicDatabaseDirectory.h"
 #include "filesystem/MusicDatabaseDirectory/DirectoryNode.h"
 #include "filesystem/MusicDatabaseDirectory/QueryParams.h"
@@ -2403,7 +2404,18 @@ int CMusicInfoScanner::CountFiles(const CFileItemList& items, bool recursive, in
     if (recursive && pItem->IsFolder())
       count += CountFilesRecursively(pItem->GetPath(), depth + 1);
     else if (MUSIC::IsAudio(*pItem) && !PLAYLIST::IsPlayList(*pItem) && !pItem->IsNFO())
-      ++count;
+    {
+      // CDirectory::GetDirectory was called with DIR_FLAG_NO_FILE_DIRS so files
+      // that expand into multiple song rows during the actual scan (chaptered
+      // audiobooks via CAudioBookFileDirectory; CUE-sheet-backed audio files)
+      // count as 1 here. If the file is already in the music DB, use the actual
+      // row count so the progress denominator matches the per-row numerator
+      // incremented in ScanTags. Falls back to 1 for unknown / first-scan files.
+      int rows = 0;
+      if (MUSIC::IsAudioBook(*pItem))
+        rows = XFILE::GetChaptersCountInMusicDb(CURL(pItem->GetPath()));
+      count += (rows > 1) ? rows : 1;
+    }
   }
   return count;
 }

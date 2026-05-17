@@ -13,6 +13,7 @@
 #include <string>
 
 class CFileItem;
+class CURL;
 
 namespace XFILE
 {
@@ -23,4 +24,12 @@ public:
   virtual ~CFileDirectoryFactory(void);
   static IFileDirectory* Create(const CURL& url, CFileItem* pItem, const std::string& strMask="");
 };
+
+/*!
+ * Return the number of song/chapter rows in the music DB for the file at this URL
+ * (e.g. an audiobook with N pre-scanned chapters returns N, a CUE-expanded file
+ * returns the number of CUE tracks). 0 if not yet in DB or DB unavailable.
+ */
+int GetChaptersCountInMusicDb(const CURL& url);
+
 }
