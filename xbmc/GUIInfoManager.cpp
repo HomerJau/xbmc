@@ -7566,6 +7566,21 @@ constexpr std::array<InfoMap, 3> container_str = {{
 ///     @skinning_v21 **[New Infolabel]** \link ListItem_MusicCodec `ListItem.MusicCodec`\endlink
 ///     <p>
 ///   }
+///   \table_row3{   <b>`ListItem.MusicChannelsString`</b>,
+///                  \anchor ListItem_MusicChannelsString
+///                  _string_,
+///     @return Friendly channel-layout label derived from codec + channel count:
+///             "Atmos" / "DTS:X" for object-based codecs\, "Mono" / "Stereo" /
+///             "Quad" / "5.0" / "5.1" / "6.1" / "7.1" for standard counts.
+///             Empty string for unknown / non-music items; skin can fall back
+///             to \link ListItem_MusicCodec `ListItem.MusicCodec`\endlink.
+///             Collection-specific overrides (e.g. silent-channel-padded
+///             "fake Quad" 6ch files\, filename-hint upmix labels) remain a
+///             skin-side concern.
+///     <p><hr>
+///     @skinning_v21 **[New Infolabel]** \link ListItem_MusicChannelsString `ListItem.MusicChannelsString`\endlink
+///     <p>
+///   }
 ///   \table_row3{   <b>`ListItem.PVRClientName`</b>,
 ///                  \anchor ListItem_PVRClientName
 ///                  _string_,
@@ -7623,7 +7638,7 @@ constexpr std::array<InfoMap, 3> container_str = {{
 /// -----------------------------------------------------------------------------
 // clang-format off
 
-constexpr std::array<InfoMap, 230> listitem_labels = {{
+constexpr std::array<InfoMap, 231> listitem_labels = {{
                                   {"thumb",            LISTITEM_THUMB },
                                   { "icon",             LISTITEM_ICON },
                                   { "actualicon",       LISTITEM_ACTUAL_ICON },
@@ -7854,6 +7869,7 @@ constexpr std::array<InfoMap, 230> listitem_labels = {{
                                   { "hdrdetail",        LISTITEM_VIDEO_HDR_DETAIL },
                                   { "musicbitspersample", LISTITEM_MUSIC_BITSPERSAMPLE },
                                   { "musiccodec",       LISTITEM_MUSIC_CODEC },
+                                  { "musicchannelsstring", LISTITEM_MUSIC_CHANNELS_STRING },
 }};
 // clang-format on
 
