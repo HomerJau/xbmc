@@ -225,6 +225,26 @@ void CMusicDatabase::CreateTables()
   CLog::Log(LOGINFO, "create song_genre table");
   m_pDS->exec("CREATE TABLE song_genre (idGenre integer, idSong integer, iOrder integer)");
 
+  CLog::Log(LOGINFO, "create streamdetails table");
+  m_pDS->exec("CREATE TABLE streamdetails ("
+              " idStreamDetail integer primary key, "
+              " idSong integer, "
+              " idAlbum integer, "
+              " iStreamIndex integer NOT NULL, "
+              " strCodec text, "
+              " iChannels integer, "
+              " iSampleRate integer, "
+              " iBitRate integer, "
+              " iBitsPerSample integer, "
+              " strLanguage text, "
+              " iFlags integer DEFAULT 0, "
+              " iPreferred integer DEFAULT 0, "
+              " iTimesPlayed integer DEFAULT 0, "
+              " lastplayed varchar(20) DEFAULT NULL, "
+              " fRating FLOAT NOT NULL DEFAULT 0, "
+              " iVotes integer NOT NULL DEFAULT 0, "
+              " iUserrating integer NOT NULL DEFAULT 0)");
+
   CLog::Log(LOGINFO, "create role table");
   m_pDS->exec("CREATE TABLE role (idRole integer primary key, strRole text)");
   m_pDS->exec("INSERT INTO role(idRole, strRole) VALUES (1, 'Artist')"); //Default role
@@ -298,6 +318,11 @@ void CMusicDatabase::CreateAnalytics()
   m_pDS->exec("CREATE UNIQUE INDEX idxSongGenre_1 ON song_genre ( idSong, idGenre )");
   m_pDS->exec("CREATE UNIQUE INDEX idxSongGenre_2 ON song_genre ( idGenre, idSong )");
 
+  m_pDS->exec("CREATE INDEX ix_streamdetails_song ON streamdetails ( idSong )");
+  m_pDS->exec("CREATE INDEX ix_streamdetails_album ON streamdetails ( idAlbum )");
+  m_pDS->exec("CREATE UNIQUE INDEX ix_streamdetails_unique ON streamdetails "
+              "( idSong, idAlbum, iStreamIndex )");
+
   m_pDS->exec("CREATE INDEX idxRole on role(strRole(255))");
 
   m_pDS->exec("CREATE INDEX idxDiscography_1 ON discography ( idArtist )");
@@ -309,6 +334,7 @@ void CMusicDatabase::CreateAnalytics()
               "  DELETE FROM song WHERE song.idAlbum = old.idAlbum;"
               "  DELETE FROM album_artist WHERE album_artist.idAlbum = old.idAlbum;"
               "  DELETE FROM album_source WHERE album_source.idAlbum = old.idAlbum;"
+              "  DELETE FROM streamdetails WHERE streamdetails.idAlbum = old.idAlbum;"
               "  DELETE FROM art WHERE media_id=old.idAlbum AND media_type='album';"
               " END");
   m_pDS->exec("CREATE TRIGGER tgrDeleteArtist AFTER delete ON artist FOR EACH ROW BEGIN"
@@ -320,6 +346,7 @@ void CMusicDatabase::CreateAnalytics()
   m_pDS->exec("CREATE TRIGGER tgrDeleteSong AFTER delete ON song FOR EACH ROW BEGIN"
               "  DELETE FROM song_artist WHERE song_artist.idSong = old.idSong;"
               "  DELETE FROM song_genre WHERE song_genre.idSong = old.idSong;"
+              "  DELETE FROM streamdetails WHERE streamdetails.idSong = old.idSong;"
               "  DELETE FROM art WHERE media_id=old.idSong AND media_type='song';"
               " END");
   m_pDS->exec("CREATE TRIGGER tgrDeleteSource AFTER delete ON source FOR EACH ROW BEGIN"
@@ -568,6 +595,159 @@ void CMusicDatabase::CreateViews()
               "     song_artist.idArtist = artist.idArtist "
               "JOIN role ON "
               "     song_artist.idRole = role.idRole");
+
+  // --- Audio-Streams sibling views ----------------------------------------
+  // One row per (album, stream-rendition). Top half = GROUP BY over streamdetails
+  // (Matroska multi-stream albums); bottom half = anti-join for albums without
+  // streamdetails (non-Matroska), with NULL codec columns — filled in lazily by
+  // albumvirtualview's COALESCE so SQLite can column-prune them on COUNT-only paths.
+  CLog::Log(LOGINFO, "create albumstream view");
+  m_pDS->exec("CREATE VIEW albumstreamview AS "
+              "SELECT sd.idAlbum AS idAlbum, "
+              "       sd.iStreamIndex AS iStream, "
+              "       MIN(sd.idStreamDetail) AS idStreamDetail, "
+              "       MIN(sd.strCodec) AS strCodec, "
+              "       MIN(sd.iChannels) AS iChannels, "
+              "       MIN(sd.iBitRate) AS iBitRate, "
+              "       MIN(sd.iSampleRate) AS iSampleRate, "
+              "       MIN(sd.iBitsPerSample) AS iBitsPerSample, "
+              "       MAX(sd.iPreferred) AS iPreferred, "
+              "       MIN(sd.strLanguage) AS strLanguage, "
+              "       MIN(sd.iFlags) AS iFlags, "
+              "       ROUND(AVG(sd.iTimesPlayed)) AS iTimesPlayed, "
+              "       MAX(sd.lastplayed) AS lastplayed "
+              "  FROM streamdetails sd "
+              " WHERE sd.idAlbum IS NOT NULL "
+              " GROUP BY sd.idAlbum, sd.iStreamIndex "
+              "UNION ALL "
+              "SELECT alb.idAlbum AS idAlbum, "
+              "       0 AS iStream, "
+              "       NULL AS idStreamDetail, "
+              "       NULL AS strCodec, "
+              "       NULL AS iChannels, "
+              "       NULL AS iBitRate, "
+              "       NULL AS iSampleRate, "
+              "       NULL AS iBitsPerSample, "
+              "       0 AS iPreferred, "
+              "       NULL AS strLanguage, "
+              "       0 AS iFlags, "
+              "       NULL AS iTimesPlayed, "
+              "       NULL AS lastplayed "
+              "  FROM album alb "
+              " WHERE NOT EXISTS "
+              "       (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = alb.idAlbum)");
+
+  // Same shape as albumview, multiplied by albumstreamview (1 row per non-Matroska
+  // album, N rows per Matroska album = one per virtual rendition).
+  // COALESCE pattern lets SQLite column-prune the song.* fallbacks when the outer
+  // query doesn't reference codec columns (Q03 album-count etc).
+  CLog::Log(LOGINFO, "create albumvirtual view");
+  m_pDS->exec("CREATE VIEW albumvirtualview AS "
+              "SELECT album.idAlbum AS idAlbum, "
+              "       strAlbum, "
+              "       strMusicBrainzAlbumID, "
+              "       strReleaseGroupMBID, "
+              "       album.strArtistDisp AS strArtists, "
+              "       album.strArtistSort AS strArtistSort, "
+              "       album.strGenres AS strGenres, "
+              "       album.strReleaseDate as strReleaseDate, "
+              "       album.strOrigReleaseDate as strOrigReleaseDate, "
+              "       album.bBoxedSet AS bBoxedSet, "
+              "       album.strMoods AS strMoods, "
+              "       album.strStyles AS strStyles, "
+              "       strThemes, "
+              "       strReview, "
+              "       strLabel, "
+              "       strType, "
+              "       strReleaseStatus, "
+              "       album.strImage as strImage, "
+              "       album.fRating, "
+              "       album.iUserrating, "
+              "       album.iVotes, "
+              "       bCompilation, "
+              "       bScrapedMBID, "
+              "       lastScraped, "
+              "       album.dateAdded, album.dateNew, album.dateModified, "
+              "       COALESCE(asv.iTimesPlayed, "
+              "                (SELECT ROUND(AVG(song.iTimesPlayed)) FROM song "
+              "                 WHERE song.idAlbum = album.idAlbum)) AS iTimesPlayed, "
+              "       strReleaseType, "
+              "       iDiscTotal, "
+              "       COALESCE(asv.lastplayed, "
+              "                (SELECT MAX(song.lastplayed) FROM song "
+              "                 WHERE song.idAlbum = album.idAlbum)) AS lastplayed, "
+              "       COALESCE(asv.strCodec, "
+              "                (SELECT song.strCodec FROM song "
+              "                 WHERE song.idAlbum = album.idAlbum LIMIT 1)) AS strCodec, "
+              "       COALESCE(asv.iChannels, "
+              "                (SELECT song.iChannels FROM song "
+              "                 WHERE song.idAlbum = album.idAlbum LIMIT 1)) AS iChannels, "
+              "       COALESCE(asv.iBitRate, "
+              "                (SELECT ROUND(AVG(song.iBitrate)) FROM song "
+              "                 WHERE song.idAlbum = album.idAlbum)) AS iBitrate, "
+              "       COALESCE(asv.iSampleRate, "
+              "                (SELECT song.iSampleRate FROM song "
+              "                 WHERE song.idAlbum = album.idAlbum LIMIT 1)) AS iSampleRate, "
+              "       COALESCE(asv.iBitsPerSample, "
+              "                (SELECT song.iBitsPerSample FROM song "
+              "                 WHERE song.idAlbum = album.idAlbum LIMIT 1)) AS iBitsPerSample, "
+              "       iAlbumDuration, "
+              "       asv.iStream AS iStream, "
+              "       asv.idStreamDetail AS idStreamDetail "
+              "  FROM album "
+              "  JOIN albumstreamview asv ON album.idAlbum = asv.idAlbum");
+
+  // Same shape as songview. LEFT JOIN streamdetails on idSong: non-Matroska songs
+  // match 0 rows (1 row per song); Matroska songs match N rows (N per stream).
+  // COALESCE picks codec from streamdetails when present else from song.*.
+  CLog::Log(LOGINFO, "create songvirtual view");
+  m_pDS->exec("CREATE VIEW songvirtualview AS SELECT "
+              "        song.idSong AS idSong, "
+              "        song.strArtistDisp AS strArtists, "
+              "        song.strArtistSort AS strArtistSort, "
+              "        song.strGenres AS strGenres, "
+              "        strTitle, "
+              "        iTrack, iDuration, "
+              "        song.strReleaseDate as strReleaseDate, "
+              "        song.strOrigReleaseDate as strOrigReleaseDate, "
+              "        song.strDiscSubtitle as strDiscSubtitle, "
+              "        strFileName, "
+              "        strMusicBrainzTrackID, "
+              "        song.iTimesPlayed, iStartOffset, iEndOffset, "
+              "        song.lastplayed, "
+              "        song.rating, "
+              "        song.userrating, "
+              "        song.votes, "
+              "        comment, "
+              "        song.idAlbum AS idAlbum, "
+              "        strAlbum, "
+              "        strPath, "
+              "        album.strReleaseStatus as strReleaseStatus, "
+              "        album.bCompilation AS bCompilation, "
+              "        album.bBoxedSet AS bBoxedSet, "
+              "        album.strArtistDisp AS strAlbumArtists, "
+              "        album.strArtistSort AS strAlbumArtistSort, "
+              "        album.strReleaseType AS strAlbumReleaseType, "
+              "        song.mood as mood, "
+              "        song.strReplayGain, "
+              "        iBPM, "
+              "        COALESCE(sd.iBitRate, song.iBitRate) AS iBitRate, "
+              "        COALESCE(sd.iSampleRate, song.iSampleRate) AS iSampleRate, "
+              "        COALESCE(sd.iBitsPerSample, song.iBitsPerSample) AS iBitsPerSample, "
+              "        COALESCE(sd.strCodec, song.strCodec) AS strCodec, "
+              "        COALESCE(sd.iChannels, song.iChannels) AS iChannels, "
+              "        song.strVideoURL as strVideoURL, "
+              "        album.iAlbumDuration AS iAlbumDuration, "
+              "        album.iDiscTotal as iDiscTotal, "
+              "        song.dateAdded as dateAdded, "
+              "        song.dateNew AS dateNew, "
+              "        song.dateModified AS dateModified, "
+              "        COALESCE(sd.iStreamIndex, 0) AS iStream, "
+              "        sd.idStreamDetail AS idStreamDetail "
+              "FROM song "
+              "  JOIN album ON song.idAlbum=album.idAlbum "
+              "  JOIN path ON song.idPath=path.idPath "
+              "  LEFT JOIN streamdetails sd ON sd.idSong = song.idSong");
 }
 
 void CMusicDatabase::CreateNativeDBFunctions()
@@ -9420,6 +9600,190 @@ void CMusicDatabase::UpdateTables(int version)
   if (version < 85) // upstream PR #28140 renamed the DTS codec from 'dca' to 'dts'
     m_pDS->exec("UPDATE song SET strCodec = 'dts' WHERE strCodec = 'dca'");
 
+  if (version < 86) // add streamdetails table and Audio-Streams sibling views
+  {
+    m_pDS->exec("CREATE TABLE streamdetails ("
+                " idStreamDetail integer primary key, "
+                " idSong integer, "
+                " idAlbum integer, "
+                " iStreamIndex integer NOT NULL, "
+                " strCodec text, "
+                " iChannels integer, "
+                " iSampleRate integer, "
+                " iBitRate integer, "
+                " iBitsPerSample integer, "
+                " strLanguage text, "
+                " iFlags integer DEFAULT 0, "
+                " iPreferred integer DEFAULT 0, "
+                " iTimesPlayed integer DEFAULT 0, "
+                " lastplayed varchar(20) DEFAULT NULL, "
+                " fRating FLOAT NOT NULL DEFAULT 0, "
+                " iVotes integer NOT NULL DEFAULT 0, "
+                " iUserrating integer NOT NULL DEFAULT 0)");
+    m_pDS->exec("CREATE INDEX ix_streamdetails_song ON streamdetails ( idSong )");
+    m_pDS->exec("CREATE INDEX ix_streamdetails_album ON streamdetails ( idAlbum )");
+    m_pDS->exec("CREATE UNIQUE INDEX ix_streamdetails_unique ON streamdetails "
+                "( idSong, idAlbum, iStreamIndex )");
+
+    // Re-create the album/song delete triggers with streamdetails cleanup.
+    m_pDS->exec("DROP TRIGGER IF EXISTS tgrDeleteAlbum");
+    m_pDS->exec("CREATE TRIGGER tgrDeleteAlbum AFTER delete ON album FOR EACH ROW BEGIN"
+                "  DELETE FROM song WHERE song.idAlbum = old.idAlbum;"
+                "  DELETE FROM album_artist WHERE album_artist.idAlbum = old.idAlbum;"
+                "  DELETE FROM album_source WHERE album_source.idAlbum = old.idAlbum;"
+                "  DELETE FROM streamdetails WHERE streamdetails.idAlbum = old.idAlbum;"
+                "  DELETE FROM art WHERE media_id=old.idAlbum AND media_type='album';"
+                " END");
+    m_pDS->exec("DROP TRIGGER IF EXISTS tgrDeleteSong");
+    m_pDS->exec("CREATE TRIGGER tgrDeleteSong AFTER delete ON song FOR EACH ROW BEGIN"
+                "  DELETE FROM song_artist WHERE song_artist.idSong = old.idSong;"
+                "  DELETE FROM song_genre WHERE song_genre.idSong = old.idSong;"
+                "  DELETE FROM streamdetails WHERE streamdetails.idSong = old.idSong;"
+                "  DELETE FROM art WHERE media_id=old.idSong AND media_type='song';"
+                " END");
+
+    // Views — drop any prior names and recreate via the canonical helper.
+    // (CreateViews drops nothing by itself; explicit DROP keeps the migration idempotent.)
+    m_pDS->exec("DROP VIEW IF EXISTS albumstreamview");
+    m_pDS->exec("DROP VIEW IF EXISTS albumvirtualview");
+    m_pDS->exec("DROP VIEW IF EXISTS songvirtualview");
+    m_pDS->exec("CREATE VIEW albumstreamview AS "
+                "SELECT sd.idAlbum AS idAlbum, "
+                "       sd.iStreamIndex AS iStream, "
+                "       MIN(sd.idStreamDetail) AS idStreamDetail, "
+                "       MIN(sd.strCodec) AS strCodec, "
+                "       MIN(sd.iChannels) AS iChannels, "
+                "       MIN(sd.iBitRate) AS iBitRate, "
+                "       MIN(sd.iSampleRate) AS iSampleRate, "
+                "       MIN(sd.iBitsPerSample) AS iBitsPerSample, "
+                "       MAX(sd.iPreferred) AS iPreferred, "
+                "       MIN(sd.strLanguage) AS strLanguage, "
+                "       MIN(sd.iFlags) AS iFlags, "
+                "       ROUND(AVG(sd.iTimesPlayed)) AS iTimesPlayed, "
+                "       MAX(sd.lastplayed) AS lastplayed "
+                "  FROM streamdetails sd "
+                " WHERE sd.idAlbum IS NOT NULL "
+                " GROUP BY sd.idAlbum, sd.iStreamIndex "
+                "UNION ALL "
+                "SELECT alb.idAlbum AS idAlbum, "
+                "       0 AS iStream, "
+                "       NULL AS idStreamDetail, "
+                "       NULL AS strCodec, "
+                "       NULL AS iChannels, "
+                "       NULL AS iBitRate, "
+                "       NULL AS iSampleRate, "
+                "       NULL AS iBitsPerSample, "
+                "       0 AS iPreferred, "
+                "       NULL AS strLanguage, "
+                "       0 AS iFlags, "
+                "       NULL AS iTimesPlayed, "
+                "       NULL AS lastplayed "
+                "  FROM album alb "
+                " WHERE NOT EXISTS "
+                "       (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = alb.idAlbum)");
+    m_pDS->exec("CREATE VIEW albumvirtualview AS "
+                "SELECT album.idAlbum AS idAlbum, "
+                "       strAlbum, "
+                "       strMusicBrainzAlbumID, "
+                "       strReleaseGroupMBID, "
+                "       album.strArtistDisp AS strArtists, "
+                "       album.strArtistSort AS strArtistSort, "
+                "       album.strGenres AS strGenres, "
+                "       album.strReleaseDate as strReleaseDate, "
+                "       album.strOrigReleaseDate as strOrigReleaseDate, "
+                "       album.bBoxedSet AS bBoxedSet, "
+                "       album.strMoods AS strMoods, "
+                "       album.strStyles AS strStyles, "
+                "       strThemes, "
+                "       strReview, "
+                "       strLabel, "
+                "       strType, "
+                "       strReleaseStatus, "
+                "       album.strImage as strImage, "
+                "       album.fRating, "
+                "       album.iUserrating, "
+                "       album.iVotes, "
+                "       bCompilation, "
+                "       bScrapedMBID, "
+                "       lastScraped, "
+                "       album.dateAdded, album.dateNew, album.dateModified, "
+                "       COALESCE(asv.iTimesPlayed, "
+                "                (SELECT ROUND(AVG(song.iTimesPlayed)) FROM song "
+                "                 WHERE song.idAlbum = album.idAlbum)) AS iTimesPlayed, "
+                "       strReleaseType, "
+                "       iDiscTotal, "
+                "       COALESCE(asv.lastplayed, "
+                "                (SELECT MAX(song.lastplayed) FROM song "
+                "                 WHERE song.idAlbum = album.idAlbum)) AS lastplayed, "
+                "       COALESCE(asv.strCodec, "
+                "                (SELECT song.strCodec FROM song "
+                "                 WHERE song.idAlbum = album.idAlbum LIMIT 1)) AS strCodec, "
+                "       COALESCE(asv.iChannels, "
+                "                (SELECT song.iChannels FROM song "
+                "                 WHERE song.idAlbum = album.idAlbum LIMIT 1)) AS iChannels, "
+                "       COALESCE(asv.iBitRate, "
+                "                (SELECT ROUND(AVG(song.iBitrate)) FROM song "
+                "                 WHERE song.idAlbum = album.idAlbum)) AS iBitrate, "
+                "       COALESCE(asv.iSampleRate, "
+                "                (SELECT song.iSampleRate FROM song "
+                "                 WHERE song.idAlbum = album.idAlbum LIMIT 1)) AS iSampleRate, "
+                "       COALESCE(asv.iBitsPerSample, "
+                "                (SELECT song.iBitsPerSample FROM song "
+                "                 WHERE song.idAlbum = album.idAlbum LIMIT 1)) AS iBitsPerSample, "
+                "       iAlbumDuration, "
+                "       asv.iStream AS iStream, "
+                "       asv.idStreamDetail AS idStreamDetail "
+                "  FROM album "
+                "  JOIN albumstreamview asv ON album.idAlbum = asv.idAlbum");
+    m_pDS->exec("CREATE VIEW songvirtualview AS SELECT "
+                "        song.idSong AS idSong, "
+                "        song.strArtistDisp AS strArtists, "
+                "        song.strArtistSort AS strArtistSort, "
+                "        song.strGenres AS strGenres, "
+                "        strTitle, "
+                "        iTrack, iDuration, "
+                "        song.strReleaseDate as strReleaseDate, "
+                "        song.strOrigReleaseDate as strOrigReleaseDate, "
+                "        song.strDiscSubtitle as strDiscSubtitle, "
+                "        strFileName, "
+                "        strMusicBrainzTrackID, "
+                "        song.iTimesPlayed, iStartOffset, iEndOffset, "
+                "        song.lastplayed, "
+                "        song.rating, "
+                "        song.userrating, "
+                "        song.votes, "
+                "        comment, "
+                "        song.idAlbum AS idAlbum, "
+                "        strAlbum, "
+                "        strPath, "
+                "        album.strReleaseStatus as strReleaseStatus, "
+                "        album.bCompilation AS bCompilation, "
+                "        album.bBoxedSet AS bBoxedSet, "
+                "        album.strArtistDisp AS strAlbumArtists, "
+                "        album.strArtistSort AS strAlbumArtistSort, "
+                "        album.strReleaseType AS strAlbumReleaseType, "
+                "        song.mood as mood, "
+                "        song.strReplayGain, "
+                "        iBPM, "
+                "        COALESCE(sd.iBitRate, song.iBitRate) AS iBitRate, "
+                "        COALESCE(sd.iSampleRate, song.iSampleRate) AS iSampleRate, "
+                "        COALESCE(sd.iBitsPerSample, song.iBitsPerSample) AS iBitsPerSample, "
+                "        COALESCE(sd.strCodec, song.strCodec) AS strCodec, "
+                "        COALESCE(sd.iChannels, song.iChannels) AS iChannels, "
+                "        song.strVideoURL as strVideoURL, "
+                "        album.iAlbumDuration AS iAlbumDuration, "
+                "        album.iDiscTotal as iDiscTotal, "
+                "        song.dateAdded as dateAdded, "
+                "        song.dateNew AS dateNew, "
+                "        song.dateModified AS dateModified, "
+                "        COALESCE(sd.iStreamIndex, 0) AS iStream, "
+                "        sd.idStreamDetail AS idStreamDetail "
+                "FROM song "
+                "  JOIN album ON song.idAlbum=album.idAlbum "
+                "  JOIN path ON song.idPath=path.idPath "
+                "  LEFT JOIN streamdetails sd ON sd.idSong = song.idSong");
+  }
+
   // Set the version of tag scanning required.
   // Not every schema change requires the tags to be rescanned, set to the highest schema version
   // that needs this. Forced rescanning (of music files that have not changed since they were
@@ -9440,7 +9804,7 @@ void CMusicDatabase::UpdateTables(int version)
 
 int CMusicDatabase::GetSchemaVersion() const
 {
-  return 85;
+  return 86;
 }
 
 int CMusicDatabase::GetMusicNeedsTagScan()
