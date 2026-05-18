@@ -1008,6 +1008,10 @@ bool CMusicDatabase::AddAlbum(CAlbum& album, int idSource)
                              song->songVideoURL, //
                              song->replayGain);
 
+      // Persist per-stream metadata (Matroska multi-stream files). Empty vector
+      // is a no-op past the initial DELETE — safe for non-Matroska songs.
+      SetStreamDetailsForSong(song->idSong, song->idAlbum, song->m_audioStreams);
+
       // Song must have at least one artist so set artist to [Missing]
       if (song->artistCredits.empty())
         AddSongArtist(BLANKARTIST_ID, song->idSong, ROLE_ARTIST, BLANKARTIST_NAME, 0);
@@ -1460,6 +1464,24 @@ bool CMusicDatabase::GetSong(int idSong, CSong& song)
       m_pDS->next();
     }
     m_pDS->close(); // cleanup recordset data
+
+    // Load per-audio-stream metadata for playback / display. Cheap single-query
+    // lookup; empty when this isn't a Matroska multi-stream file.
+    GetStreamDetailsForSong(idSong, song.m_audioStreams);
+    if (!song.m_audioStreams.empty())
+    {
+      // PaPlayer reads this to pick which stream to decode (see VideoPlayerCodec::Init).
+      // Pick the stream tagged AV_DISPOSITION_DEFAULT, else fall back to the first.
+      song.m_iPreferredStreamIndex = song.m_audioStreams.front().iStreamIndex;
+      for (const auto& s : song.m_audioStreams)
+      {
+        if (s.iFlags & 0x1u /* AV_DISPOSITION_DEFAULT */)
+        {
+          song.m_iPreferredStreamIndex = s.iStreamIndex;
+          break;
+        }
+      }
+    }
     return true;
   }
   catch (...)
@@ -1467,6 +1489,94 @@ bool CMusicDatabase::GetSong(int idSong, CSong& song)
     CLog::LogF(LOGERROR, "({}) failed", idSong);
   }
 
+  return false;
+}
+
+bool CMusicDatabase::SetStreamDetailsForSong(int idSong,
+                                             int idAlbum,
+                                             const std::vector<MusicAudioStreamInfo>& streams)
+{
+  try
+  {
+    if (nullptr == m_pDB)
+      return false;
+    if (nullptr == m_pDS)
+      return false;
+    if (idSong <= 0)
+      return false;
+
+    // Atomic rewrite: clear any prior rows for this song, then insert the new set.
+    // Skip the work entirely when the song is single-stream (vector empty) and
+    // there's nothing to clean up — common case for non-Matroska files.
+    BeginTransaction();
+    m_pDS->exec(PrepareSQL("DELETE FROM streamdetails WHERE idSong = %i", idSong));
+    for (const auto& s : streams)
+    {
+      const std::string sql = PrepareSQL(
+          "INSERT INTO streamdetails ("
+          " idSong, idAlbum, iStreamIndex,"
+          " strCodec, iChannels, iSampleRate, iBitRate, iBitsPerSample,"
+          " strLanguage, iFlags, iPreferred)"
+          " VALUES (%i, %i, %i, '%s', %i, %i, %i, %i, '%s', %u, %i)",
+          idSong, idAlbum, s.iStreamIndex,
+          s.strCodec.c_str(), s.iChannels, s.iSampleRate, s.iBitRate, s.iBitsPerSample,
+          s.strLanguage.c_str(), s.iFlags,
+          // iPreferred: set on whichever stream the scanner picked as default; the
+          // tag's GetPreferredAudioStreamIndex matches one of these iStreamIndex
+          // values. For the perf-test gate we used iPreferred=1 on stream 0; here
+          // we let the scanner pass it via iFlags & AV_DISPOSITION_DEFAULT.
+          (s.iFlags & 0x1u /* AV_DISPOSITION_DEFAULT */) ? 1 : 0);
+      m_pDS->exec(sql);
+    }
+    CommitTransaction();
+    return true;
+  }
+  catch (...)
+  {
+    RollbackTransaction();
+    CLog::LogF(LOGERROR, "({}, {}) failed", idSong, idAlbum);
+  }
+  return false;
+}
+
+bool CMusicDatabase::GetStreamDetailsForSong(int idSong,
+                                             std::vector<MusicAudioStreamInfo>& streams)
+{
+  streams.clear();
+  try
+  {
+    if (nullptr == m_pDB)
+      return false;
+    if (nullptr == m_pDS)
+      return false;
+    const std::string sql =
+        PrepareSQL("SELECT iStreamIndex, strCodec, iChannels, iSampleRate, iBitRate, "
+                   "       iBitsPerSample, strLanguage, iFlags "
+                   "FROM streamdetails WHERE idSong = %i ORDER BY iStreamIndex",
+                   idSong);
+    if (!m_pDS->query(sql))
+      return false;
+    while (!m_pDS->eof())
+    {
+      MusicAudioStreamInfo info;
+      info.iStreamIndex = m_pDS->fv(0).get_asInt();
+      info.strCodec = m_pDS->fv(1).get_asString();
+      info.iChannels = m_pDS->fv(2).get_asInt();
+      info.iSampleRate = m_pDS->fv(3).get_asInt();
+      info.iBitRate = m_pDS->fv(4).get_asInt();
+      info.iBitsPerSample = m_pDS->fv(5).get_asInt();
+      info.strLanguage = m_pDS->fv(6).get_asString();
+      info.iFlags = static_cast<uint32_t>(m_pDS->fv(7).get_asInt());
+      streams.push_back(info);
+      m_pDS->next();
+    }
+    m_pDS->close();
+    return true;
+  }
+  catch (...)
+  {
+    CLog::LogF(LOGERROR, "({}) failed", idSong);
+  }
   return false;
 }
 
@@ -1499,6 +1609,10 @@ bool CMusicDatabase::UpdateSong(CSong& song, bool bArtists /*= true*/, bool bArt
 
   // Replace Song genres and update genre string using the standardised genre names
   AddSongGenres(song.idSong, song.genre);
+
+  // Replace per-audio-stream rows. Empty vector clears any prior streamdetails;
+  // common case for non-Matroska / single-stream files.
+  SetStreamDetailsForSong(song.idSong, song.idAlbum, song.m_audioStreams);
   if (bArtists)
   {
     //Replace song artists and contributors

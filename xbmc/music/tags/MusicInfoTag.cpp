@@ -568,6 +568,26 @@ void CMusicInfoTag::SetCodec(const std::string& codec)
   m_codec = codec;
 }
 
+const std::vector<MusicAudioStreamInfo>& CMusicInfoTag::GetAudioStreams() const
+{
+  return m_audioStreams;
+}
+
+void CMusicInfoTag::SetAudioStreams(const std::vector<MusicAudioStreamInfo>& streams)
+{
+  m_audioStreams = streams;
+}
+
+int CMusicInfoTag::GetPreferredAudioStreamIndex() const
+{
+  return m_iPreferredStreamIndex;
+}
+
+void CMusicInfoTag::SetPreferredAudioStreamIndex(int index)
+{
+  m_iPreferredStreamIndex = index;
+}
+
 void CMusicInfoTag::SetMood(std::string_view mood)
 {
   m_strMood = mood;
@@ -929,6 +949,8 @@ void CMusicInfoTag::SetSong(const CSong& song)
   SetBitsPerSample(song.iBitsPerSample);
   SetCodec(song.strCodec);
   SetSongVideoURL(song.songVideoURL);
+  SetAudioStreams(song.m_audioStreams);
+  SetPreferredAudioStreamIndex(song.m_iPreferredStreamIndex);
   if (song.replayGain.Get(ReplayGain::TRACK).Valid())
     m_replayGain.Set(ReplayGain::TRACK, song.replayGain.Get(ReplayGain::TRACK));
   if (song.replayGain.Get(ReplayGain::ALBUM).Valid())
@@ -1292,6 +1314,8 @@ void CMusicInfoTag::Clear()
   m_stationArt.clear();
   m_songVideoURL.clear();
   m_chapters.clear();
+  m_audioStreams.clear();
+  m_iPreferredStreamIndex = -1;
 }
 
 void CMusicInfoTag::AppendArtist(const std::string &artist)

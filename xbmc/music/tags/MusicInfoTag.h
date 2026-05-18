@@ -168,6 +168,13 @@ public:
   void SetBitsPerSample(int bitspersample);
   void SetCodec(const std::string& strCodec);
 
+  // Multi-audio-stream support (Matroska .mka/.mkv with multiple audio tracks).
+  // Empty vector = single-stream file; m_iPreferredStreamIndex = -1 = unknown.
+  const std::vector<MusicAudioStreamInfo>& GetAudioStreams() const;
+  void SetAudioStreams(const std::vector<MusicAudioStreamInfo>& streams);
+  int GetPreferredAudioStreamIndex() const;
+  void SetPreferredAudioStreamIndex(int index);
+
   /*! \brief Append a unique artist to the artist list
    Checks if we have this artist already added, and if not adds it to the songs artist list.
    \param value artist to add.
@@ -270,6 +277,11 @@ private:
   std::string m_stationArt; // Used to fetch thumb URL for Shoutcasts
   std::string m_songVideoURL; // link to a video for a song
   std::vector<ChapterDetails> m_chapters; // Ch No., name, start time, end time
+
+  // Per-audio-stream metadata for Matroska multi-stream music files.
+  // Empty = single-stream file; preferred index -1 = unknown.
+  std::vector<MusicAudioStreamInfo> m_audioStreams;
+  int m_iPreferredStreamIndex{-1};
 
   EmbeddedArtInfo m_coverArt; ///< art information
 

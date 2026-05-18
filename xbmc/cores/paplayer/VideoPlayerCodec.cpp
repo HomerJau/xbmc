@@ -18,6 +18,7 @@
 #include "cores/VideoPlayer/DVDDemuxers/DVDFactoryDemuxer.h"
 #include "cores/VideoPlayer/DVDInputStreams/DVDFactoryInputStream.h"
 #include "cores/VideoPlayer/DVDStreamInfo.h"
+#include "music/tags/MusicInfoTag.h"
 #include "music/tags/TagLoaderTagLib.h"
 #include "utils/StringUtils.h"
 #include "utils/log.h"
@@ -119,18 +120,37 @@ bool VideoPlayerCodec::Init(const CFileItem &file, unsigned int filecache)
     return false;
   }
 
+  // Multi-audio-stream Matroska files (.mka/.mkv with multiple audio tracks)
+  // carry a preferred-stream hint on the CMusicInfoTag, populated by the music
+  // scanner via the streamdetails table. When set, pick that stream instead of
+  // 'first audio wins'. Single-stream files leave the hint at -1 and the loop
+  // below collapses to the original behaviour.
+  int preferredIndex = -1;
+  if (file.HasMusicInfoTag())
+    preferredIndex = file.GetMusicInfoTag()->GetPreferredAudioStreamIndex();
+
   CDemuxStream* pStream = NULL;
+  CDemuxStream* pFallback = NULL;
   m_nAudioStream = -1;
   int64_t demuxerId = -1;
   for (auto stream : m_pDemuxer->GetStreams())
   {
-    if (stream && stream->type == StreamType::AUDIO)
+    if (!stream || stream->type != StreamType::AUDIO)
+      continue;
+    if (!pFallback)
+      pFallback = stream;
+    if (preferredIndex >= 0 && stream->uniqueId == preferredIndex)
     {
-      m_nAudioStream = stream->uniqueId;
-      demuxerId = stream->demuxerId;
       pStream = stream;
       break;
     }
+  }
+  if (!pStream)
+    pStream = pFallback;
+  if (pStream)
+  {
+    m_nAudioStream = pStream->uniqueId;
+    demuxerId = pStream->demuxerId;
   }
 
   if (m_nAudioStream == -1)

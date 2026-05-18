@@ -14,6 +14,7 @@
 */
 
 #include "MusicType.h"
+#include "Song.h" // for MusicAudioStreamInfo (used by SetStreamDetailsForSong / GetStreamDetailsForSong)
 #include "addons/Scraper.h"
 #include "dbwrappers/Database.h"
 #include "settings/LibExportSettings.h"
@@ -172,6 +173,24 @@ public:
               const std::string& songVideoURL,
               const ReplayGain& replayGain);
   bool GetSong(int idSong, CSong& song);
+
+  /*! \brief Persist per-audio-stream metadata for a song (Matroska multi-stream files).
+   Atomically deletes all existing streamdetails rows for the song then inserts one
+   row per element of \a streams. Pass an empty vector to clear (single-stream file).
+   \param idSong  song database id (must already exist in the song table)
+   \param idAlbum album database id the song belongs to (denormalised onto streamdetails)
+   \param streams per-stream metadata; empty = no streamdetails rows persisted
+   \return true on success
+   */
+  bool SetStreamDetailsForSong(int idSong,
+                               int idAlbum,
+                               const std::vector<MusicAudioStreamInfo>& streams);
+
+  /*! \brief Load per-audio-stream metadata for a song into \a streams.
+   \return true on success (including when the song has no streamdetails rows —
+   \a streams is then cleared)
+   */
+  bool GetStreamDetailsForSong(int idSong, std::vector<MusicAudioStreamInfo>& streams);
 
   /*! \brief Update a song and all its nested entities (genres, artists, contributors)
     \param song [in/out] the song to update, artist ids are returned in artist credits

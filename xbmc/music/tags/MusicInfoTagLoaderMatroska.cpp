@@ -178,10 +178,17 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   // Look for any embedded cover art
   CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(strFileName, tag, art);
 
-  // Get Codec data using FFmpeg (taglib not accurate for all codecs yet - v2.3)
+  // Get Codec data using FFmpeg (taglib not accurate for all codecs yet - v2.3).
+  // Also collect per-audio-stream metadata on the same demuxer open — zero
+  // additional file I/O. Multi-stream Matroska files (e.g. Atmos / 5.1 / Stereo
+  // bundles) get a populated audioStreams vector; single-stream files get an
+  // empty vector and the existing single-codec path is unchanged.
   bool haveFFmpegInfo = false;
   musicCodecInfo codec_info;
-  haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info);
+  std::vector<MusicAudioStreamInfo> audioStreams;
+  int preferredIndex = -1;
+  haveFFmpegInfo =
+      CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info, audioStreams, preferredIndex);
   if (haveFFmpegInfo)
   {
     tag.SetBitRate(codec_info.bitRate);
@@ -190,6 +197,13 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
     tag.SetCodec(codec_info.codecName); // e.g. 'truehd_atmos', 'dts_ma', 'dts_hd', etc
     tag.SetNoOfChannels(codec_info.channels);
     tag.SetDuration(codec_info.duration);
+    // Only persist the per-stream vector when the file has multiple audio streams.
+    // Single-stream files keep their codec info on the song table only (Option B).
+    if (audioStreams.size() > 1)
+    {
+      tag.SetAudioStreams(audioStreams);
+      tag.SetPreferredAudioStreamIndex(preferredIndex);
+    }
   }
 
   if (!tag.GetAlbum().empty() || !tag.GetTitle().empty())

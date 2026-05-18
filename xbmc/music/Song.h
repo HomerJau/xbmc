@@ -49,6 +49,23 @@ struct ChapterDetails
 };
 
 /*!
+ \brief Per-audio-stream metadata for multi-stream Matroska music files.
+ Populated by the scanner via CMusicCodecInfoFFmpeg and persisted in the
+ streamdetails table. Empty for single-stream files.
+ */
+struct MusicAudioStreamInfo
+{
+  int iStreamIndex{0};
+  std::string strCodec;
+  int iChannels{0};
+  int iSampleRate{0};
+  int iBitRate{0};
+  int iBitsPerSample{0};
+  std::string strLanguage;
+  uint32_t iFlags{0}; // AV_DISPOSITION_* bitmap (DEFAULT, FORCED, ORIGINAL, ...)
+};
+
+/*!
  \ingroup music
  \brief Class to store and read song information from CMusicDatabase
  \sa CAlbum, CMusicDatabase
@@ -206,6 +223,12 @@ public:
   std::string strAlbumType; // (Musicbrainz release type) album type from tag for album processing by CMusicInfoScanner::FileItemsToAlbums
   std::string songVideoURL; // url to song video
   std::vector<ChapterDetails> m_chapters; // map of chapter names and start and end times
+
+  // Per-audio-stream metadata for Matroska multi-stream files (.mka/.mkv).
+  // Empty for single-stream files — codec/channels/etc. then live on the
+  // existing iBitRate / iChannels / strCodec etc. members instead.
+  std::vector<MusicAudioStreamInfo> m_audioStreams;
+  int m_iPreferredStreamIndex{-1}; // -1 = unknown / single-stream file
 
   ReplayGain replayGain;
 
