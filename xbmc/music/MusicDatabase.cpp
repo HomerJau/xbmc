@@ -226,10 +226,18 @@ void CMusicDatabase::CreateTables()
   m_pDS->exec("CREATE TABLE song_genre (idGenre integer, idSong integer, iOrder integer)");
 
   CLog::Log(LOGINFO, "create streamdetails table");
+  // Sparse per-stream-type rows. iStreamType: 0=video, 1=audio (matches the
+  // CStreamDetail::StreamType enum from xbmc/utils/StreamDetails.h, although
+  // we deliberately do NOT use that video-side struct — music owns its own
+  // in-memory carriers per the music-only-ownership design decision).
+  // Audio-row columns use music's existing no-Audio-prefix convention
+  // (strCodec / iChannels / strLanguage match song.* naming); video-row
+  // columns mirror Kodi's video DB streamdetails verbatim for future-proofing.
   m_pDS->exec("CREATE TABLE streamdetails ("
               " idStreamDetail integer primary key, "
               " idSong integer, "
               " idAlbum integer, "
+              " iStreamType integer NOT NULL DEFAULT 1, "
               " iStreamIndex integer NOT NULL, "
               " strCodec text, "
               " iChannels integer, "
@@ -243,7 +251,17 @@ void CMusicDatabase::CreateTables()
               " lastplayed varchar(20) DEFAULT NULL, "
               " fRating FLOAT NOT NULL DEFAULT 0, "
               " iVotes integer NOT NULL DEFAULT 0, "
-              " iUserrating integer NOT NULL DEFAULT 0)");
+              " iUserrating integer NOT NULL DEFAULT 0, "
+              " strVideoCodec text, "
+              " iVideoWidth integer, "
+              " iVideoHeight integer, "
+              " fVideoAspect float, "
+              " iVideoDuration integer, "
+              " strStereoMode text, "
+              " strVideoLanguage text, "
+              " strHdrType text, "
+              " strHdrDetail text, "
+              " strSubtitleLanguage text)");
 
   CLog::Log(LOGINFO, "create role table");
   m_pDS->exec("CREATE TABLE role (idRole integer primary key, strRole text)");
@@ -320,8 +338,10 @@ void CMusicDatabase::CreateAnalytics()
 
   m_pDS->exec("CREATE INDEX ix_streamdetails_song ON streamdetails ( idSong )");
   m_pDS->exec("CREATE INDEX ix_streamdetails_album ON streamdetails ( idAlbum )");
+  // iStreamType in the key so an audio row and a video row for the same song
+  // can share iStreamIndex without colliding.
   m_pDS->exec("CREATE UNIQUE INDEX ix_streamdetails_unique ON streamdetails "
-              "( idSong, idAlbum, iStreamIndex )");
+              "( idSong, idAlbum, iStreamType, iStreamIndex )");
 
   m_pDS->exec("CREATE INDEX idxRole on role(strRole(255))");
 
@@ -617,7 +637,7 @@ void CMusicDatabase::CreateViews()
               "       ROUND(AVG(sd.iTimesPlayed)) AS iTimesPlayed, "
               "       MAX(sd.lastplayed) AS lastplayed "
               "  FROM streamdetails sd "
-              " WHERE sd.idAlbum IS NOT NULL "
+              " WHERE sd.idAlbum IS NOT NULL AND sd.iStreamType = 1 "
               " GROUP BY sd.idAlbum, sd.iStreamIndex "
               "UNION ALL "
               "SELECT alb.idAlbum AS idAlbum, "
@@ -635,7 +655,8 @@ void CMusicDatabase::CreateViews()
               "       NULL AS lastplayed "
               "  FROM album alb "
               " WHERE NOT EXISTS "
-              "       (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = alb.idAlbum)");
+              "       (SELECT 1 FROM streamdetails sd "
+              "         WHERE sd.idAlbum = alb.idAlbum AND sd.iStreamType = 1)");
 
   // Same shape as albumview, multiplied by albumstreamview (1 row per non-Matroska
   // album, N rows per Matroska album = one per virtual rendition).
@@ -693,7 +714,14 @@ void CMusicDatabase::CreateViews()
               "                 WHERE song.idAlbum = album.idAlbum LIMIT 1)) AS iBitsPerSample, "
               "       iAlbumDuration, "
               "       asv.iStream AS iStream, "
-              "       asv.idStreamDetail AS idStreamDetail "
+              "       asv.idStreamDetail AS idStreamDetail, "
+              // Concert-MKV detection: true if any streamdetails row for this
+              // album is a video stream (iStreamType = 0). Skin code reads this
+              // via songvirtualview.bHasVideoStream / albumvirtualview.bHasVideoStream
+              // to decide whether to surface video codec InfoLabels.
+              "       EXISTS(SELECT 1 FROM streamdetails sdv "
+              "               WHERE sdv.idAlbum = album.idAlbum AND sdv.iStreamType = 0) "
+              "         AS bHasVideoStream "
               "  FROM album "
               "  JOIN albumstreamview asv ON album.idAlbum = asv.idAlbum");
 
@@ -743,11 +771,15 @@ void CMusicDatabase::CreateViews()
               "        song.dateNew AS dateNew, "
               "        song.dateModified AS dateModified, "
               "        COALESCE(sd.iStreamIndex, 0) AS iStream, "
-              "        sd.idStreamDetail AS idStreamDetail "
+              "        sd.idStreamDetail AS idStreamDetail, "
+              "        EXISTS(SELECT 1 FROM streamdetails sdv "
+              "                WHERE sdv.idSong = song.idSong AND sdv.iStreamType = 0) "
+              "          AS bHasVideoStream "
               "FROM song "
               "  JOIN album ON song.idAlbum=album.idAlbum "
               "  JOIN path ON song.idPath=path.idPath "
-              "  LEFT JOIN streamdetails sd ON sd.idSong = song.idSong");
+              "  LEFT JOIN streamdetails sd ON sd.idSong = song.idSong "
+              "                            AND sd.iStreamType = 1");
 }
 
 void CMusicDatabase::CreateNativeDBFunctions()
@@ -9772,6 +9804,10 @@ void CMusicDatabase::UpdateTables(int version)
     // run unconditionally after UpdateTables() per
     // CDatabaseManager::UpdateVersion() — duplicating them here would cause
     // "already exists" errors and roll back the migration.
+    // Note: this is the v86 (audio-only) shape. The v87 block immediately
+    // below brings any DB to the current shape via ALTER TABLE, so the columns
+    // here intentionally lag the CreateTables() body — they will be brought
+    // forward by v87 in the same upgrade pass.
     m_pDS->exec("CREATE TABLE streamdetails ("
                 " idStreamDetail integer primary key, "
                 " idSong integer, "
@@ -9790,6 +9826,27 @@ void CMusicDatabase::UpdateTables(int version)
                 " fRating FLOAT NOT NULL DEFAULT 0, "
                 " iVotes integer NOT NULL DEFAULT 0, "
                 " iUserrating integer NOT NULL DEFAULT 0)");
+  }
+
+  if (version < 87) // extend streamdetails with iStreamType + video-row columns
+  {
+    // Audio/Video-Streams design change: streamdetails now carries per-
+    // stream-type rows (iStreamType: 0=video, 1=audio). Existing audio-only
+    // rows from v86 get iStreamType=1 via the DEFAULT — preserves data.
+    // Video-row columns mirror Kodi's video-DB streamdetails column names.
+    // Indexes (incl. the updated unique-index key) and views are recreated
+    // unconditionally by CreateAnalytics()/CreateViews() after this runs.
+    m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN iStreamType integer NOT NULL DEFAULT 1");
+    m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN strVideoCodec text");
+    m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN iVideoWidth integer");
+    m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN iVideoHeight integer");
+    m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN fVideoAspect float");
+    m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN iVideoDuration integer");
+    m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN strStereoMode text");
+    m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN strVideoLanguage text");
+    m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN strHdrType text");
+    m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN strHdrDetail text");
+    m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN strSubtitleLanguage text");
   }
 
   // Set the version of tag scanning required.
@@ -9812,7 +9869,7 @@ void CMusicDatabase::UpdateTables(int version)
 
 int CMusicDatabase::GetSchemaVersion() const
 {
-  return 86;
+  return 87;
 }
 
 int CMusicDatabase::GetMusicNeedsTagScan()
