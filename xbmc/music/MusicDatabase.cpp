@@ -6220,7 +6220,12 @@ bool CMusicDatabase::GetAlbumsByWhere(const std::string& baseDir,
     std::string strFields = "albumview.*";
     if (!extFilter.fields.empty() && extFilter.fields.compare("*") != 0)
       strFields = "albumview.*, " + extFilter.fields;
-    strSQL = "SELECT " + strFields + " FROM albumview " + strSQLExtra;
+    // Audio-Streams feature: query the row-per-rendition virtual view but expose
+    // it via the "albumview" alias so existing JOINs / WHERE / ORDER references
+    // (which all use the "albumview." prefix) keep compiling. albumvirtualview
+    // has the original albumview columns in the same order plus iStream and
+    // idStreamDetail at the tail, picked up via the AlbumFields enum extras.
+    strSQL = "SELECT " + strFields + " FROM albumvirtualview AS albumview " + strSQLExtra;
 
     // run query
     CLog::LogF(LOGDEBUG, "query: {}", strSQL);
@@ -6267,7 +6272,31 @@ bool CMusicDatabase::GetAlbumsByWhere(const std::string& baseDir,
         std::string path = StringUtils::Format("{}/", record->at(album_idAlbum).get_asInt());
         itemUrl.AppendPath(path);
 
+        // Audio-Streams feature: when this row is a multi-stream rendition (the
+        // streamdetails JOIN matched, idStreamDetail non-zero), encode the stream
+        // selection on the URL and append a codec/channel suffix to the label so
+        // each virtual album appears distinctly in the music browser. Non-Matroska
+        // and single-stream rows have idStreamDetail = 0 and pass through unchanged.
+        const int virtualStream = record->at(album_iStream).get_asInt();
+        const int idStreamDetail = record->at(album_idStreamDetail).get_asInt();
+        if (idStreamDetail > 0)
+          itemUrl.AddOption("streamid", virtualStream);
+
         auto pItem{std::make_shared<CFileItem>(itemUrl.ToString(), GetAlbumFromDataset(record))};
+        if (idStreamDetail > 0)
+        {
+          const std::string codec = record->at(album_strCodec).get_asString();
+          const int channels = record->at(album_iChannels).get_asInt();
+          if (!codec.empty())
+          {
+            std::string suffix = " [" + codec;
+            if (channels > 0)
+              suffix += StringUtils::Format(" {}ch", channels);
+            suffix += "]";
+            pItem->SetLabel(pItem->GetLabel() + suffix);
+          }
+          pItem->GetMusicInfoTag()->SetPreferredAudioStreamIndex(virtualStream);
+        }
         // Set icon now to avoid slow per item processing in FillInDefaultIcon later
         pItem->SetProperty("icon_never_overlay", true);
         pItem->SetArt("icon", "DefaultAlbumCover.png");
@@ -6559,6 +6588,14 @@ bool CMusicDatabase::GetSongsFullByWhere(const std::string& baseDir,
       extFilter.AppendJoin("JOIN albumview ON albumview.idAlbum = songview.idAlbum");
     }
 
+    // Audio-Streams feature: when GetFilter added a `songview.iStream = N` WHERE
+    // clause from a streamid URL option, the result set must come from
+    // songvirtualview (the only view with an iStream column). Use it under the
+    // "songview" alias so all existing JOIN/WHERE/ORDER references keep working;
+    // also skips the song-table COUNT optimisation since song.* lacks iStream.
+    const bool useStreamView = extFilter.where.find("songview.iStream") != std::string::npos;
+    const std::string songSource = useStreamView ? "songvirtualview AS songview" : "songview";
+
     // Build songview <where> for count
     std::string strSQLExtra;
     if (!BuildSQL(strSQLExtra, extFilter, strSQLExtra))
@@ -6566,12 +6603,12 @@ bool CMusicDatabase::GetSongsFullByWhere(const std::string& baseDir,
 
     // Count (without group by) number of songs that satisfy selection criteria
     // Much quicker to use song table, not songview, when filtering only on song fields
-    if (extended ||
+    if (useStreamView || extended ||
         (!extFilter.where.empty() && (extFilter.where.find("strAlbum") != std::string::npos ||
                                       extFilter.where.find("strPath") != std::string::npos ||
                                       extFilter.where.find("bCompilation") != std::string::npos ||
                                       extFilter.where.find("bBoxedset") != std::string::npos)))
-      total = GetSingleValueInt("SELECT COUNT(1) FROM songview " + strSQLExtra, *m_pDS);
+      total = GetSingleValueInt("SELECT COUNT(1) FROM " + songSource + " " + strSQLExtra, *m_pDS);
     else
     {
       std::string strSQLsong = strSQLExtra;
@@ -6648,15 +6685,15 @@ bool CMusicDatabase::GetSongsFullByWhere(const std::string& baseDir,
         //   <order by sv fields>, songartistview.idRole, songartistview.iOrder
         // Apply where clause, limits and order to songview, then join to songartistview this gives
         // multiple records per song in result set
-        strSQL = "SELECT " + strFields + " FROM songview " + strSQLExtra;
+        strSQL = "SELECT " + strFields + " FROM " + songSource + " " + strSQLExtra;
         strSQL = "(" + strSQL + ") AS sv ";
         strSQL = "SELECT sv.*, songartistview.* FROM " + strSQL + strSQLJoin;
       }
       else
-        strSQL = "SELECT " + strFields + " FROM songview " + strSQLJoin;
+        strSQL = "SELECT " + strFields + " FROM " + songSource + " " + strSQLJoin;
     }
     else
-      strSQL = "SELECT " + strFields + " FROM songview " + strSQLExtra;
+      strSQL = "SELECT " + strFields + " FROM " + songSource + " " + strSQLExtra;
 
     CLog::LogF(LOGDEBUG, "query = {}", strSQL);
     auto queryStart = std::chrono::steady_clock::now();
@@ -6690,7 +6727,10 @@ bool CMusicDatabase::GetSongsFullByWhere(const std::string& baseDir,
 
     // Get songs from returned rows. If join songartistview then there is a row for every artist
     items.Reserve(total);
-    int songArtistOffset = song_enumCount;
+    // Audio-Streams feature: when querying songvirtualview, two extra columns
+    // (iStream, idStreamDetail) sit between songview's columns and
+    // songartistview's, so the artist-credit offset needs to skip past them.
+    int songArtistOffset = song_enumCount + (useStreamView ? 2 : 0);
     int songId = -1;
     std::vector<CArtistCredit> artistCredits;
     const dbiplus::query_data& data = m_pDS->get_result_set().records;
@@ -6713,6 +6753,15 @@ bool CMusicDatabase::GetSongsFullByWhere(const std::string& baseDir,
           songId = record->at(song_idSong).get_asInt();
           auto item{std::make_shared<CFileItem>()};
           GetFileItemFromDataset(record, item.get(), musicUrl);
+          // Audio-Streams feature: route PaPlayer at the chosen virtual rendition
+          // by stamping the song tag's preferred-stream index from
+          // songvirtualview.iStream (one row per song = one iStream value here,
+          // since the URL streamid option restricted the query).
+          if (useStreamView)
+          {
+            const int virtualStream = record->at(song_enumCount).get_asInt();
+            item->GetMusicInfoTag()->SetPreferredAudioStreamIndex(virtualStream);
+          }
           //! @todo remove hack to use program count for sorting by database returned order
           count++;
           item->SetProgramCount(count);
@@ -13725,6 +13774,7 @@ bool CMusicDatabase::GetFilter(CDbUrl& musicUrl, Filter& filter, SortDescription
   int idSong = -1;
   int idDisc = -1;
   int idSource = -1;
+  int idStream = -1; // Audio-Streams feature: which virtual rendition to filter songs to
   bool albumArtistsOnly = false;
   bool useOriginalYear = false;
   std::string artistname;
@@ -13795,6 +13845,13 @@ bool CMusicDatabase::GetFilter(CDbUrl& musicUrl, Filter& filter, SortDescription
   option = options.find("songid");
   if (option != options.end())
     idSong = static_cast<int>(option->second.asInteger());
+
+  // Audio-Streams feature: when present, the songs listing must come from
+  // songvirtualview filtered to a specific iStream (so PaPlayer receives the
+  // matching m_iPreferredStreamIndex via GetSongFromDataset).
+  option = options.find("streamid");
+  if (option != options.end())
+    idStream = static_cast<int>(option->second.asInteger());
 
   if (type == "artists")
   {
@@ -14195,6 +14252,13 @@ bool CMusicDatabase::GetFilter(CDbUrl& musicUrl, Filter& filter, SortDescription
 
     if (idDisc > 0)
       filter.AppendWhere(PrepareSQL("songview.iTrack >> 16 = %i", idDisc));
+
+    // Audio-Streams feature: when navigating into a specific virtual rendition
+    // of a multi-stream Matroska album, restrict the song listing to that
+    // rendition. GetSongsByWhere swaps to songvirtualview AS songview when this
+    // is set so the iStream column resolves.
+    if (idStream >= 0)
+      filter.AppendWhere(PrepareSQL("songview.iStream = %i", idStream));
 
     if (idGenre > 0)
       filter.AppendWhere(PrepareSQL("songview.idSong IN (SELECT song_genre.idSong FROM song_genre "

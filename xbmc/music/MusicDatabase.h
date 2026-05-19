@@ -1100,6 +1100,11 @@ private:
     album_iSampleRate,
     album_iBitsPerSample,
     album_iAlbumDuration,
+    // Audio-Streams sibling-view extras (positions match albumvirtualview's
+    // trailing columns). Only meaningful when SELECTing from albumvirtualview;
+    // reading them from albumview returns 0 / empty.
+    album_iStream,
+    album_idStreamDetail,
     album_enumCount // end of the enum, do not add past here
   };
 
