@@ -138,9 +138,17 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(m_fctx, albumtag);
 
   // now get the AudioCodec -------------------------------------
+  // For chaptered Matroska files (audiobooks, compilations) the audio streams
+  // belong to the file itself, NOT to individual chapters — they're identical
+  // across every chapter. Read once here onto albumtag; the per-chapter loop
+  // below copies albumtag onto each derived song-item, so m_audioStreams and
+  // m_iPreferredStreamIndex propagate to every song record for free.
   bool haveFFmpegInfo = false;
   musicCodecInfo codec_info;
-  haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(url.Get(), codec_info);
+  std::vector<MusicAudioStreamInfo> audioStreams;
+  int preferredIndex = -1;
+  haveFFmpegInfo =
+      CMusicCodecInfoFFmpeg::GetMusicCodecInfo(url.Get(), codec_info, audioStreams, preferredIndex);
   if (haveFFmpegInfo) // use data from FFmpeg (taglib 2.3 does not support some codecs)
   {
     albumtag.SetBitRate(codec_info.bitRate);
@@ -149,6 +157,13 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
     albumtag.SetCodec(codec_info.codecName); // e.g. 'truehd_atmos', 'dts_ma', 'dts_hd', etc
     albumtag.SetNoOfChannels(codec_info.channels);
     albumtag.SetDuration(codec_info.duration);
+    // Only persist the per-stream vector when the file is actually multi-stream
+    // (matches the MusicInfoTagLoaderMatroska single-file path).
+    if (audioStreams.size() > 1)
+    {
+      albumtag.SetAudioStreams(audioStreams);
+      albumtag.SetPreferredAudioStreamIndex(preferredIndex);
+    }
   }
 
   float chapter_size = 0;
