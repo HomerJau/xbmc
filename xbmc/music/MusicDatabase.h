@@ -1100,12 +1100,14 @@ private:
     album_iSampleRate,
     album_iBitsPerSample,
     album_iAlbumDuration,
-    // Audio-Streams sibling-view extras (positions match albumvirtualview's
-    // trailing columns). Only meaningful when SELECTing from albumvirtualview;
-    // reading them from albumview returns 0 / empty.
-    album_iStream,
+    album_enumCount, // width of `albumview.*` — keep `albumview`-based queries
+                     // using this as the offset to a JOINed albumartistview.
+    // Audio-Streams sibling-view extras. albumvirtualview appends iStream and
+    // idStreamDetail after the regular albumview columns, so they sit at the
+    // same numeric position as album_enumCount onwards. Only meaningful when
+    // the row came from a `SELECT albumvirtualview.*` query.
+    album_iStream = album_enumCount,
     album_idStreamDetail,
-    album_enumCount // end of the enum, do not add past here
   };
 
   // Fields should be ordered as they
