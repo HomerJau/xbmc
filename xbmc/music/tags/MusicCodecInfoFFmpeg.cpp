@@ -11,6 +11,11 @@
 #include "cores/FFmpeg.h"
 #include "filesystem/File.h"
 
+extern "C"
+{
+#include <libavutil/pixdesc.h> // av_color_transfer_name
+}
+
 using namespace XFILE;
 
 namespace

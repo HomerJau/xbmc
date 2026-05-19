@@ -1579,7 +1579,7 @@ bool CMusicDatabase::SetStreamDetailsForSong(int idSong,
           " VALUES (%i, %i, 0, 0, '%s', %i, %i, %f, %i, '%s', '%s', '%s', '%s')",
           idSong, idAlbum,
           videoStream.strVideoCodec.c_str(), videoStream.iVideoWidth,
-          videoStream.iVideoHeight, videoStream.fVideoAspect,
+          videoStream.iVideoHeight, static_cast<double>(videoStream.fVideoAspect),
           videoStream.iVideoDuration, videoStream.strStereoMode.c_str(),
           videoStream.strVideoLanguage.c_str(), videoStream.strHdrType.c_str(),
           videoStream.strHdrDetail.c_str());
