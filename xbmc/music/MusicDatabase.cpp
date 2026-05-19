@@ -1040,9 +1040,11 @@ bool CMusicDatabase::AddAlbum(CAlbum& album, int idSource)
                              song->songVideoURL, //
                              song->replayGain);
 
-      // Persist per-stream metadata (Matroska multi-stream files). Empty vector
-      // is a no-op past the initial DELETE — safe for non-Matroska songs.
-      SetStreamDetailsForSong(song->idSong, song->idAlbum, song->m_audioStreams);
+      // Persist per-stream metadata (Matroska multi-stream files / Concert MKVs).
+      // Empty audio vector + no video is a no-op past the initial DELETE — safe
+      // for non-Matroska songs.
+      SetStreamDetailsForSong(song->idSong, song->idAlbum, song->m_audioStreams,
+                              song->m_videoStream, song->m_bHasVideoStream);
 
       // Song must have at least one artist so set artist to [Missing]
       if (song->artistCredits.empty())
@@ -1497,9 +1499,11 @@ bool CMusicDatabase::GetSong(int idSong, CSong& song)
     }
     m_pDS->close(); // cleanup recordset data
 
-    // Load per-audio-stream metadata for playback / display. Cheap single-query
-    // lookup; empty when this isn't a Matroska multi-stream file.
-    GetStreamDetailsForSong(idSong, song.m_audioStreams);
+    // Load per-stream metadata for playback / display. Cheap single-query
+    // lookup; empty audio + no video when this isn't a Matroska multi-stream
+    // file or Concert MKV.
+    GetStreamDetailsForSong(idSong, song.m_audioStreams, song.m_videoStream,
+                            song.m_bHasVideoStream);
     if (!song.m_audioStreams.empty())
     {
       // PaPlayer reads this to pick which stream to decode (see VideoPlayerCodec::Init).
@@ -1526,7 +1530,9 @@ bool CMusicDatabase::GetSong(int idSong, CSong& song)
 
 bool CMusicDatabase::SetStreamDetailsForSong(int idSong,
                                              int idAlbum,
-                                             const std::vector<MusicAudioStreamInfo>& streams)
+                                             const std::vector<MusicAudioStreamInfo>& streams,
+                                             const MusicVideoStreamInfo& videoStream,
+                                             bool hasVideoStream)
 {
   try
   {
@@ -1537,19 +1543,20 @@ bool CMusicDatabase::SetStreamDetailsForSong(int idSong,
     if (idSong <= 0)
       return false;
 
-    // Atomic rewrite: clear any prior rows for this song, then insert the new set.
-    // Skip the work entirely when the song is single-stream (vector empty) and
-    // there's nothing to clean up — common case for non-Matroska files.
+    // Atomic rewrite: clear any prior rows for this song, then insert the new
+    // set (audio rows then, optionally, one video row). Skip the work entirely
+    // when there's nothing — empty audio vector + no video = common non-
+    // Matroska case where the DELETE almost always hits zero rows.
     BeginTransaction();
     m_pDS->exec(PrepareSQL("DELETE FROM streamdetails WHERE idSong = %i", idSong));
     for (const auto& s : streams)
     {
       const std::string sql = PrepareSQL(
           "INSERT INTO streamdetails ("
-          " idSong, idAlbum, iStreamIndex,"
+          " idSong, idAlbum, iStreamType, iStreamIndex,"
           " strCodec, iChannels, iSampleRate, iBitRate, iBitsPerSample,"
           " strLanguage, iFlags, iPreferred)"
-          " VALUES (%i, %i, %i, '%s', %i, %i, %i, %i, '%s', %u, %i)",
+          " VALUES (%i, %i, 1, %i, '%s', %i, %i, %i, %i, '%s', %u, %i)",
           idSong, idAlbum, s.iStreamIndex,
           s.strCodec.c_str(), s.iChannels, s.iSampleRate, s.iBitRate, s.iBitsPerSample,
           s.strLanguage.c_str(), s.iFlags,
@@ -1558,6 +1565,24 @@ bool CMusicDatabase::SetStreamDetailsForSong(int idSong,
           // values. For the perf-test gate we used iPreferred=1 on stream 0; here
           // we let the scanner pass it via iFlags & AV_DISPOSITION_DEFAULT.
           (s.iFlags & 0x1u /* AV_DISPOSITION_DEFAULT */) ? 1 : 0);
+      m_pDS->exec(sql);
+    }
+    if (hasVideoStream)
+    {
+      // One row per song with iStreamType=0 carries Concert-MKV metadata.
+      // iStreamIndex is always 0 — we capture only the first video stream.
+      const std::string sql = PrepareSQL(
+          "INSERT INTO streamdetails ("
+          " idSong, idAlbum, iStreamType, iStreamIndex,"
+          " strVideoCodec, iVideoWidth, iVideoHeight, fVideoAspect,"
+          " iVideoDuration, strStereoMode, strVideoLanguage, strHdrType, strHdrDetail)"
+          " VALUES (%i, %i, 0, 0, '%s', %i, %i, %f, %i, '%s', '%s', '%s', '%s')",
+          idSong, idAlbum,
+          videoStream.strVideoCodec.c_str(), videoStream.iVideoWidth,
+          videoStream.iVideoHeight, videoStream.fVideoAspect,
+          videoStream.iVideoDuration, videoStream.strStereoMode.c_str(),
+          videoStream.strVideoLanguage.c_str(), videoStream.strHdrType.c_str(),
+          videoStream.strHdrDetail.c_str());
       m_pDS->exec(sql);
     }
     CommitTransaction();
@@ -1572,34 +1597,61 @@ bool CMusicDatabase::SetStreamDetailsForSong(int idSong,
 }
 
 bool CMusicDatabase::GetStreamDetailsForSong(int idSong,
-                                             std::vector<MusicAudioStreamInfo>& streams)
+                                             std::vector<MusicAudioStreamInfo>& streams,
+                                             MusicVideoStreamInfo& videoStream,
+                                             bool& hasVideoStream)
 {
   streams.clear();
+  videoStream = MusicVideoStreamInfo{};
+  hasVideoStream = false;
   try
   {
     if (nullptr == m_pDB)
       return false;
     if (nullptr == m_pDS)
       return false;
+    // Single query returns both audio and video rows; we branch by iStreamType.
+    // ORDER BY iStreamType DESC puts AUDIO (1) before VIDEO (0) — incidental.
     const std::string sql =
-        PrepareSQL("SELECT iStreamIndex, strCodec, iChannels, iSampleRate, iBitRate, "
-                   "       iBitsPerSample, strLanguage, iFlags "
-                   "FROM streamdetails WHERE idSong = %i ORDER BY iStreamIndex",
+        PrepareSQL("SELECT iStreamType, iStreamIndex, strCodec, iChannels, iSampleRate, "
+                   "       iBitRate, iBitsPerSample, strLanguage, iFlags, "
+                   "       strVideoCodec, iVideoWidth, iVideoHeight, fVideoAspect, "
+                   "       iVideoDuration, strStereoMode, strVideoLanguage, "
+                   "       strHdrType, strHdrDetail "
+                   "FROM streamdetails WHERE idSong = %i "
+                   "ORDER BY iStreamType DESC, iStreamIndex",
                    idSong);
     if (!m_pDS->query(sql))
       return false;
     while (!m_pDS->eof())
     {
-      MusicAudioStreamInfo info;
-      info.iStreamIndex = m_pDS->fv(0).get_asInt();
-      info.strCodec = m_pDS->fv(1).get_asString();
-      info.iChannels = m_pDS->fv(2).get_asInt();
-      info.iSampleRate = m_pDS->fv(3).get_asInt();
-      info.iBitRate = m_pDS->fv(4).get_asInt();
-      info.iBitsPerSample = m_pDS->fv(5).get_asInt();
-      info.strLanguage = m_pDS->fv(6).get_asString();
-      info.iFlags = static_cast<uint32_t>(m_pDS->fv(7).get_asInt());
-      streams.push_back(info);
+      const int iStreamType = m_pDS->fv(0).get_asInt();
+      if (iStreamType == 1) // audio
+      {
+        MusicAudioStreamInfo info;
+        info.iStreamIndex = m_pDS->fv(1).get_asInt();
+        info.strCodec = m_pDS->fv(2).get_asString();
+        info.iChannels = m_pDS->fv(3).get_asInt();
+        info.iSampleRate = m_pDS->fv(4).get_asInt();
+        info.iBitRate = m_pDS->fv(5).get_asInt();
+        info.iBitsPerSample = m_pDS->fv(6).get_asInt();
+        info.strLanguage = m_pDS->fv(7).get_asString();
+        info.iFlags = static_cast<uint32_t>(m_pDS->fv(8).get_asInt());
+        streams.push_back(info);
+      }
+      else if (iStreamType == 0) // video
+      {
+        videoStream.strVideoCodec = m_pDS->fv(9).get_asString();
+        videoStream.iVideoWidth = m_pDS->fv(10).get_asInt();
+        videoStream.iVideoHeight = m_pDS->fv(11).get_asInt();
+        videoStream.fVideoAspect = m_pDS->fv(12).get_asFloat();
+        videoStream.iVideoDuration = m_pDS->fv(13).get_asInt();
+        videoStream.strStereoMode = m_pDS->fv(14).get_asString();
+        videoStream.strVideoLanguage = m_pDS->fv(15).get_asString();
+        videoStream.strHdrType = m_pDS->fv(16).get_asString();
+        videoStream.strHdrDetail = m_pDS->fv(17).get_asString();
+        hasVideoStream = true;
+      }
       m_pDS->next();
     }
     m_pDS->close();
@@ -1642,9 +1694,10 @@ bool CMusicDatabase::UpdateSong(CSong& song, bool bArtists /*= true*/, bool bArt
   // Replace Song genres and update genre string using the standardised genre names
   AddSongGenres(song.idSong, song.genre);
 
-  // Replace per-audio-stream rows. Empty vector clears any prior streamdetails;
-  // common case for non-Matroska / single-stream files.
-  SetStreamDetailsForSong(song.idSong, song.idAlbum, song.m_audioStreams);
+  // Replace per-stream rows. Empty audio vector + no video clears any prior
+  // streamdetails; common case for non-Matroska / single-stream files.
+  SetStreamDetailsForSong(song.idSong, song.idAlbum, song.m_audioStreams,
+                          song.m_videoStream, song.m_bHasVideoStream);
   if (bArtists)
   {
     //Replace song artists and contributors

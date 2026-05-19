@@ -179,16 +179,18 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
   CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(strFileName, tag, art);
 
   // Get Codec data using FFmpeg (taglib not accurate for all codecs yet - v2.3).
-  // Also collect per-audio-stream metadata on the same demuxer open — zero
-  // additional file I/O. Multi-stream Matroska files (e.g. Atmos / 5.1 / Stereo
-  // bundles) get a populated audioStreams vector; single-stream files get an
-  // empty vector and the existing single-codec path is unchanged.
+  // Also collect per-audio-stream metadata + video-stream metadata on the same
+  // demuxer open — zero additional file I/O. Multi-stream Matroska files (e.g.
+  // Atmos / 5.1 / Stereo bundles) get a populated audioStreams vector; Concert
+  // MKVs additionally set hasVideoStream = true and populate videoStream.
   bool haveFFmpegInfo = false;
   musicCodecInfo codec_info;
   std::vector<MusicAudioStreamInfo> audioStreams;
   int preferredIndex = -1;
-  haveFFmpegInfo =
-      CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info, audioStreams, preferredIndex);
+  MusicVideoStreamInfo videoStream;
+  bool hasVideoStream = false;
+  haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(
+      strFileName, codec_info, audioStreams, preferredIndex, videoStream, hasVideoStream);
   if (haveFFmpegInfo)
   {
     tag.SetBitRate(codec_info.bitRate);
@@ -203,6 +205,11 @@ bool CMusicInfoTagLoaderMatroska::Load(const std::string& strFileName,
     {
       tag.SetAudioStreams(audioStreams);
       tag.SetPreferredAudioStreamIndex(preferredIndex);
+    }
+    if (hasVideoStream)
+    {
+      tag.SetVideoStream(videoStream);
+      tag.SetHasVideoStream(true);
     }
   }
 

@@ -45,4 +45,20 @@ public:
                                 musicCodecInfo& codec_info,
                                 std::vector<MusicAudioStreamInfo>& streams,
                                 int& preferredIndex);
+
+  /*!
+   \brief Same as the audio-streams overload plus video-stream extraction.
+   Populates \a videoStream with the first non-cover-art video stream's
+   metadata when the container carries one, and sets \a hasVideoStream true.
+   Music files with no video stream leave the struct default-constructed and
+   \a hasVideoStream false. Used by the scanner to populate Concert-MKV
+   metadata (iStreamType = 0 rows in streamdetails) on the same demuxer open
+   as the audio-streams pass — zero additional I/O.
+   */
+  static bool GetMusicCodecInfo(const std::string& strFileName,
+                                musicCodecInfo& codec_info,
+                                std::vector<MusicAudioStreamInfo>& streams,
+                                int& preferredIndex,
+                                MusicVideoStreamInfo& videoStream,
+                                bool& hasVideoStream);
 };

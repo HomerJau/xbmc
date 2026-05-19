@@ -81,6 +81,8 @@ CSong::CSong(CFileItem& item)
   m_chapters = tag.GetChapterMarks();
   m_audioStreams = tag.GetAudioStreams();
   m_iPreferredStreamIndex = tag.GetPreferredAudioStreamIndex();
+  m_videoStream = tag.GetVideoStream();
+  m_bHasVideoStream = tag.HasVideoStream();
 }
 
 CSong::CSong()
@@ -296,6 +298,8 @@ void CSong::Clear()
   m_chapters.clear();
   m_audioStreams.clear();
   m_iPreferredStreamIndex = -1;
+  m_videoStream = MusicVideoStreamInfo{};
+  m_bHasVideoStream = false;
 
   replayGain = ReplayGain();
 }

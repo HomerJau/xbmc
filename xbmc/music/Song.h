@@ -66,6 +66,28 @@ struct MusicAudioStreamInfo
 };
 
 /*!
+ \brief Per-video-stream metadata for music files that carry a video track
+ (Concert MKVs etc). Populated by the scanner via CMusicCodecInfoFFmpeg and
+ persisted alongside audio streams in the streamdetails table (iStreamType
+ = 0). Music files with no video track leave the struct default-constructed.
+ Column-name parity with Kodi's video DB streamdetails for future-proofing
+ — note we deliberately do NOT reuse CStreamDetailVideo to keep music-side
+ code ownership independent of xbmc/utils/StreamDetails.
+ */
+struct MusicVideoStreamInfo
+{
+  int iVideoWidth{0};
+  int iVideoHeight{0};
+  std::string strVideoCodec;
+  float fVideoAspect{0.0f};
+  int iVideoDuration{0};
+  std::string strStereoMode;
+  std::string strVideoLanguage;
+  std::string strHdrType; // "hdr10", "hlg", "dolbyvision", or "" for SDR
+  std::string strHdrDetail; // colorimetry/transfer detail (best-effort)
+};
+
+/*!
  \ingroup music
  \brief Class to store and read song information from CMusicDatabase
  \sa CAlbum, CMusicDatabase
@@ -229,6 +251,11 @@ public:
   // existing iBitRate / iChannels / strCodec etc. members instead.
   std::vector<MusicAudioStreamInfo> m_audioStreams;
   int m_iPreferredStreamIndex{-1}; // -1 = unknown / single-stream file
+
+  // Video stream (Concert MKV / video-bearing music files). Default-
+  // constructed when no video stream present; check m_bHasVideoStream first.
+  MusicVideoStreamInfo m_videoStream;
+  bool m_bHasVideoStream{false};
 
   ReplayGain replayGain;
 

@@ -147,8 +147,10 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
   musicCodecInfo codec_info;
   std::vector<MusicAudioStreamInfo> audioStreams;
   int preferredIndex = -1;
-  haveFFmpegInfo =
-      CMusicCodecInfoFFmpeg::GetMusicCodecInfo(url.Get(), codec_info, audioStreams, preferredIndex);
+  MusicVideoStreamInfo videoStream;
+  bool hasVideoStream = false;
+  haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(
+      url.Get(), codec_info, audioStreams, preferredIndex, videoStream, hasVideoStream);
   if (haveFFmpegInfo) // use data from FFmpeg (taglib 2.3 does not support some codecs)
   {
     albumtag.SetBitRate(codec_info.bitRate);
@@ -163,6 +165,11 @@ bool CAudioBookFileDirectory::GetDirectory(const CURL& url, CFileItemList& items
     {
       albumtag.SetAudioStreams(audioStreams);
       albumtag.SetPreferredAudioStreamIndex(preferredIndex);
+    }
+    if (hasVideoStream)
+    {
+      albumtag.SetVideoStream(videoStream);
+      albumtag.SetHasVideoStream(true);
     }
   }
 

@@ -175,6 +175,14 @@ public:
   int GetPreferredAudioStreamIndex() const;
   void SetPreferredAudioStreamIndex(int index);
 
+  // Video-stream support (Concert MKV / video-bearing music files).
+  // m_bHasVideoStream is the authoritative "is this a video-bearing music
+  // item" flag; m_videoStream is default-constructed when absent.
+  const MusicVideoStreamInfo& GetVideoStream() const;
+  void SetVideoStream(const MusicVideoStreamInfo& videoStream);
+  bool HasVideoStream() const;
+  void SetHasVideoStream(bool has);
+
   /*! \brief Append a unique artist to the artist list
    Checks if we have this artist already added, and if not adds it to the songs artist list.
    \param value artist to add.
@@ -282,6 +290,8 @@ private:
   // Empty = single-stream file; preferred index -1 = unknown.
   std::vector<MusicAudioStreamInfo> m_audioStreams;
   int m_iPreferredStreamIndex{-1};
+  MusicVideoStreamInfo m_videoStream;
+  bool m_bHasVideoStream{false};
 
   EmbeddedArtInfo m_coverArt; ///< art information
 

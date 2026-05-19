@@ -174,23 +174,32 @@ public:
               const ReplayGain& replayGain);
   bool GetSong(int idSong, CSong& song);
 
-  /*! \brief Persist per-audio-stream metadata for a song (Matroska multi-stream files).
+  /*! \brief Persist per-stream metadata for a song (Matroska multi-stream / Concert MKV).
    Atomically deletes all existing streamdetails rows for the song then inserts one
-   row per element of \a streams. Pass an empty vector to clear (single-stream file).
-   \param idSong  song database id (must already exist in the song table)
-   \param idAlbum album database id the song belongs to (denormalised onto streamdetails)
-   \param streams per-stream metadata; empty = no streamdetails rows persisted
+   audio row per element of \a streams (iStreamType=1), plus one video row
+   (iStreamType=0) when \a hasVideoStream is true. Pass empty vector + false to clear.
+   \param idSong          song database id (must already exist in the song table)
+   \param idAlbum         album database id the song belongs to (denormalised onto streamdetails)
+   \param streams         per-audio-stream metadata; empty = no audio streamdetails rows
+   \param videoStream     video-stream metadata (ignored when \a hasVideoStream is false)
+   \param hasVideoStream  true = persist one video row from \a videoStream
    \return true on success
    */
   bool SetStreamDetailsForSong(int idSong,
                                int idAlbum,
-                               const std::vector<MusicAudioStreamInfo>& streams);
+                               const std::vector<MusicAudioStreamInfo>& streams,
+                               const MusicVideoStreamInfo& videoStream,
+                               bool hasVideoStream);
 
-  /*! \brief Load per-audio-stream metadata for a song into \a streams.
-   \return true on success (including when the song has no streamdetails rows —
-   \a streams is then cleared)
+  /*! \brief Load per-stream metadata for a song.
+   Audio rows populate \a streams; the optional video row populates \a videoStream
+   and sets \a hasVideoStream true. All three out-params are reset on entry.
+   \return true on success (including when the song has no streamdetails rows)
    */
-  bool GetStreamDetailsForSong(int idSong, std::vector<MusicAudioStreamInfo>& streams);
+  bool GetStreamDetailsForSong(int idSong,
+                               std::vector<MusicAudioStreamInfo>& streams,
+                               MusicVideoStreamInfo& videoStream,
+                               bool& hasVideoStream);
 
   /*! \brief Update a song and all its nested entities (genres, artists, contributors)
     \param song [in/out] the song to update, artist ids are returned in artist credits
