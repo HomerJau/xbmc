@@ -5,9 +5,9 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: KODI Main\n"
-"Report-Msgid-Bugs-To: https://github.com/xbmc/xbmc/issues/\n"
+"Report-Msgid-Bugs-To: translations@kodi.tv\n"
 "POT-Creation-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"PO-Revision-Date: 2026-05-16 17:34+0000\n"
+"PO-Revision-Date: 2026-05-17 15:10+0000\n"
 "Last-Translator: Pavlo Marianov <acid@jack.kyiv.ua>\n"
 "Language-Team: Ukrainian <https://kodi.weblate.cloud/projects/kodi-add-ons-skins/skin-estuary/uk_ua/>\n"
 "Language: uk_ua\n"
@@ -795,17 +795,17 @@ msgstr "канали"
 #. Label to show the subtitle decoder name
 msgctxt "#31613"
 msgid "Subtitle decoder"
-msgstr ""
+msgstr "Декодер субтитрів"
 
 #. Label to show the subtitle codec name
 msgctxt "#31614"
 msgid "Subtitle codec"
-msgstr ""
+msgstr "Кодек субтитрів"
 
 #. Label to show the subtitle language
 msgctxt "#31615"
 msgid "Subtitle language"
-msgstr ""
+msgstr "Мова субтитрів"
 
 #~ msgctxt "#31025"
 #~ msgid "No favourites found. You can add any item from media views to this list by using the context menu."
