@@ -1446,9 +1446,55 @@
         "datemodified",
         "datenew",
         "albumduration",
-        "songvideourl"
+        "songvideourl",
+        "streamdetails"
       ]
     }
+  },
+  "Audio.Streams": {
+    "type": "object",
+    "description": "Per-stream metadata for Matroska multi-stream music + Concert MKV files. Populated by the music scanner via CMusicCodecInfoFFmpeg and persisted in the streamdetails table.",
+    "properties": {
+      "audio": {
+        "type": "array",
+        "description": "One entry per audio stream. Single-stream music files emit zero entries (single-codec data is on the parent song fields).",
+        "items": {
+          "type": "object",
+          "properties": {
+            "streamindex":   { "type": "integer", "description": "FFmpeg AVStream index inside the container" },
+            "codec":         { "type": "string" },
+            "channels":      { "type": "integer" },
+            "samplerate":    { "type": "integer" },
+            "bitrate":       { "type": "integer", "description": "kbps (codecpar bit_rate, or Matroska BPS tag fallback)" },
+            "bitspersample": { "type": "integer" },
+            "language":      { "type": "string" },
+            "flags":         { "type": "integer", "description": "AV_DISPOSITION_* bitmap (DEFAULT=0x1, etc.)" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "video": {
+        "type": "object",
+        "description": "Single video stream (Concert MKV). Absent when hasvideo is false.",
+        "properties": {
+          "codec":      { "type": "string" },
+          "width":      { "type": "integer" },
+          "height":     { "type": "integer" },
+          "aspect":     { "type": "number" },
+          "duration":   { "type": "integer", "description": "Seconds" },
+          "stereomode": { "type": "string" },
+          "language":   { "type": "string" },
+          "hdrtype":    { "type": "string", "description": "hdr10 / hlg / dolbyvision / empty for SDR" },
+          "hdrdetail":  { "type": "string", "description": "FFmpeg color_trc name (best-effort)" }
+        },
+        "additionalProperties": false
+      },
+      "hasvideo": {
+        "type": "boolean",
+        "description": "True when a video stream row exists for this song's album (Concert MKV). Lets clients filter without inspecting the video sub-object."
+      }
+    },
+    "additionalProperties": false
   },
   "Audio.Album.ReleaseType": {
     "type": "string",
@@ -1819,6 +1865,9 @@
       },
       "songvideourl": {
         "type": "string"
+      },
+      "streamdetails": {
+        "$ref": "Audio.Streams"
       }
     }
   },

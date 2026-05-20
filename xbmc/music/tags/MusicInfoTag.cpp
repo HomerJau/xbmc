@@ -1062,7 +1062,51 @@ void CMusicInfoTag::Serialize(CVariant& value) const
   value["channels"] = m_channels;
   value["bitspersample"] = m_bitsPerSample;
   value["codec"] = m_codec;
-  value["songvideourl"] = m_songVideoURL;}
+  value["songvideourl"] = m_songVideoURL;
+
+  // Multi-stream + Concert-MKV metadata, exposed as a single "streamdetails"
+  // object that mirrors the video-DB pattern (Video.Streams). Omitted from the
+  // payload when the song is a plain single-stream non-video file (common case)
+  // so JSON-RPC consumers don't pay serialization overhead on every song.
+  if (!m_audioStreams.empty() || m_bHasVideoStream)
+  {
+    CVariant streamDetails(CVariant::VariantTypeObject);
+    streamDetails["hasvideo"] = m_bHasVideoStream;
+    if (!m_audioStreams.empty())
+    {
+      CVariant audioArr(CVariant::VariantTypeArray);
+      for (const auto& s : m_audioStreams)
+      {
+        CVariant item(CVariant::VariantTypeObject);
+        item["streamindex"] = s.iStreamIndex;
+        item["codec"] = s.strCodec;
+        item["channels"] = s.iChannels;
+        item["samplerate"] = s.iSampleRate;
+        item["bitrate"] = s.iBitRate;
+        item["bitspersample"] = s.iBitsPerSample;
+        item["language"] = s.strLanguage;
+        item["flags"] = static_cast<int>(s.iFlags);
+        audioArr.push_back(item);
+      }
+      streamDetails["audio"] = audioArr;
+    }
+    if (m_bHasVideoStream)
+    {
+      CVariant videoObj(CVariant::VariantTypeObject);
+      videoObj["codec"] = m_videoStream.strVideoCodec;
+      videoObj["width"] = m_videoStream.iVideoWidth;
+      videoObj["height"] = m_videoStream.iVideoHeight;
+      videoObj["aspect"] = m_videoStream.fVideoAspect;
+      videoObj["duration"] = m_videoStream.iVideoDuration;
+      videoObj["stereomode"] = m_videoStream.strStereoMode;
+      videoObj["language"] = m_videoStream.strVideoLanguage;
+      videoObj["hdrtype"] = m_videoStream.strHdrType;
+      videoObj["hdrdetail"] = m_videoStream.strHdrDetail;
+      streamDetails["video"] = videoObj;
+    }
+    value["streamdetails"] = streamDetails;
+  }
+}
 
 void CMusicInfoTag::ToSortable(SortItem& sortable, Field field) const
 {
