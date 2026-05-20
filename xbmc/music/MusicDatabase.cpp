@@ -1187,11 +1187,18 @@ bool CMusicDatabase::UpdateAlbum(CAlbum& album)
       }
     }
   }
-  // Keep releasetype unless it's missing
-  std::string strSQL =
-      PrepareSQL("SELECT strReleaseType FROM album WHERE idAlbum = '%i'", album.idAlbum);
-  std::string currentReleaseType = GetSingleValue(strSQL);
-  album.releaseType = AudioType::FromString(currentReleaseType).value_or(AudioType::Content::Album);
+  // Preserve a previously-persisted releasetype only when nothing this scan
+  // produced a stronger signal (no NFO <releasetype>, no scanner autodetect).
+  // In-memory value == default Album means "no signal".
+  if (album.releaseType.GetContent() == AudioType::Content::Album)
+  {
+    std::string strSQL =
+        PrepareSQL("SELECT strReleaseType FROM album WHERE idAlbum = '%i'", album.idAlbum);
+    std::string currentReleaseType = GetSingleValue(strSQL);
+    if (!currentReleaseType.empty())
+      album.releaseType =
+          AudioType::FromString(currentReleaseType).value_or(AudioType::Content::Album);
+  }
 
   UpdateAlbum(album.idAlbum, album.strAlbum, album.strMusicBrainzAlbumID, //
               album.strReleaseGroupMBID, //
@@ -14217,19 +14224,14 @@ bool CMusicDatabase::GetFilter(CDbUrl& musicUrl, Filter& filter, SortDescription
         genreSub.BuildSQL(genreSQL);
         filter.AppendWhere(genreSQL);
       }
-      // can't exclude singles from concerts, audiobooks or podcasts because there aren't any !
-      if (filter.where.find("concert") == std::string::npos &&
-          filter.where.find("audiobook") == std::string::npos &&
-          filter.where.find("podcast") == std::string::npos)
-      {
-      // Exclude any single albums (aka empty tagged albums)
-      // This causes "albums"  media filter artist selection to only offer album artists
-        option = options.find("show_singles");
-        if (option == options.end() || !option->second.asBoolean())
-          filter.AppendWhere(PrepareSQL("albumview.strReleaseType = '%s'",
-                                      AudioType::ToStdString(AudioType::Content::Album).c_str()));
-      }
-
+      // Hide the "single" sentinel rows (empty-tagged pseudo-albums) from
+      // the default Albums view; show_singles=true overrides. Concerts,
+      // audiobooks and podcasts are real albums and remain visible — any
+      // rule that wants to narrow further selects them itself.
+      option = options.find("show_singles");
+      if (option == options.end() || !option->second.asBoolean())
+        filter.AppendWhere(PrepareSQL("albumview.strReleaseType != '%s'",
+                                      AudioType::ToStdString(AudioType::Content::Single).c_str()));
     }
   }
   else if (type == "discs")

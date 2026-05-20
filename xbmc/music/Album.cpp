@@ -404,8 +404,7 @@ std::string CAlbum::GetReleaseType() const
 
 void CAlbum::SetReleaseType(const std::string& strReleaseType)
 {
-  releaseType.FromString(strReleaseType);
-  //releaseType = ReleaseTypeFromString(strReleaseType);
+  releaseType = AudioType::FromString(strReleaseType).value_or(AudioType::Content::Album);
 }
 
 void CAlbum::SetDateAdded(const std::string& strDateAdded)
