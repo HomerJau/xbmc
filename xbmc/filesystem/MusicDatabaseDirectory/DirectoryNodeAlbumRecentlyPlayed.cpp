@@ -13,6 +13,7 @@
 #include "ServiceBroker.h"
 #include "music/Album.h"
 #include "music/MusicDatabase.h"
+#include "music/MusicDbUrl.h"
 #include "resources/LocalizeStrings.h"
 #include "resources/ResourcesComponent.h"
 #include "music/tags/MusicInfoTag.h"
@@ -60,10 +61,30 @@ bool CDirectoryNodeAlbumRecentlyPlayed::GetContent(CFileItemList& items) const
 
   for (const CAlbum& album : albums)
   {
-    std::string strDir = StringUtils::Format("{}{}/", BuildPath(), album.idAlbum);
+    // Build the musicdb:// URL with optional streamid option for the virtual
+    // rendition. Mirrors GetAlbumsByWhere so the row reads like a distinct
+    // rendition and playback honours the selection.
+    CMusicDbUrl itemUrl;
+    itemUrl.FromString(BuildPath());
+    itemUrl.AppendPath(StringUtils::Format("{}/", album.idAlbum));
+    if (album.idStreamDetail > 0)
+      itemUrl.AddOption("streamid", album.iStream);
+
     std::string albumPath = musicdatabase.GetPathForAlbum(album.idAlbum);
-    CFileItemPtr pItem(new CFileItem(strDir, album));
+    CFileItemPtr pItem(new CFileItem(itemUrl.ToString(), album));
     pItem->GetMusicInfoTag()->SetURL(albumPath);
+    if (album.idStreamDetail > 0)
+    {
+      if (!album.strCodec.empty())
+      {
+        std::string suffix = " [" + album.strCodec;
+        if (album.iChannels > 0)
+          suffix += StringUtils::Format(" {}ch", album.iChannels);
+        suffix += "]";
+        pItem->SetLabel(pItem->GetLabel() + suffix);
+      }
+      pItem->GetMusicInfoTag()->SetPreferredAudioStreamIndex(album.iStream);
+    }
     items.Add(pItem);
   }
 

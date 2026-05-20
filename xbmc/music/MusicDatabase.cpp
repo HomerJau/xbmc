@@ -4082,14 +4082,17 @@ bool CMusicDatabase::GetTop100Albums(std::vector<CAlbum>& albums)
     if (nullptr == m_pDS)
       return false;
 
-    // Get data from album and album_artist tables to fully populate albums
-    std::string strSQL = "SELECT albumview.*, albumartistview.* FROM albumview "
+    // Get data from album and album_artist tables to fully populate albums.
+    // Source is albumvirtualview so multi-audio-stream Matroska albums produce
+    // one row per virtual rendition — same shape as the main Albums browser.
+    std::string strSQL = "SELECT albumview.*, albumartistview.* "
+                         "FROM albumvirtualview AS albumview "
                          "JOIN albumartistview ON albumview.idAlbum = albumartistview.idAlbum "
                          "WHERE albumartistview.idAlbum IN "
                          "(SELECT albumview.idAlbum FROM albumview "
                          "WHERE albumview.strAlbum != '' AND albumview.iTimesPlayed>0 "
                          "ORDER BY albumview.iTimesPlayed DESC LIMIT 100) "
-                         "ORDER BY albumview.iTimesPlayed DESC, albumartistview.iOrder";
+                         "ORDER BY albumview.iTimesPlayed DESC, albumview.iStream, albumartistview.iOrder";
 
     CLog::LogF(LOGDEBUG, "query: {}", strSQL);
     if (!m_pDS->query(strSQL))
@@ -4101,16 +4104,22 @@ bool CMusicDatabase::GetTop100Albums(std::vector<CAlbum>& albums)
       return true;
     }
 
-    int albumArtistOffset = album_enumCount;
+    constexpr int kAlbumVirtualExtras = 7;
+    int albumArtistOffset = album_enumCount + kAlbumVirtualExtras;
     int albumId = -1;
+    int streamId = -1;
     while (!m_pDS->eof())
     {
       const dbiplus::sql_record* const record = m_pDS->get_sql_record();
-
-      if (albumId != record->at(album_idAlbum).get_asInt())
-      { // New album
-        albumId = record->at(album_idAlbum).get_asInt();
+      const int rowAlbumId = record->at(album_idAlbum).get_asInt();
+      const int rowStreamId = record->at(album_iStream).get_asInt();
+      if (albumId != rowAlbumId || streamId != rowStreamId)
+      { // New (album, rendition) pair
+        albumId = rowAlbumId;
+        streamId = rowStreamId;
         albums.push_back(GetAlbumFromDataset(record));
+        albums.back().iStream = rowStreamId;
+        albums.back().idStreamDetail = record->at(album_idStreamDetail).get_asInt();
       }
       // Get album artists
       albums.back().artistCredits.push_back(GetArtistCreditFromDataset(record, albumArtistOffset));
@@ -4195,15 +4204,17 @@ bool CMusicDatabase::GetRecentlyPlayedAlbums(std::vector<CAlbum>& albums)
 
     auto start = std::chrono::steady_clock::now();
 
-    // Get data from album and album_artist tables to fully populate albums
+    // Get data from album and album_artist tables to fully populate albums.
+    // Source is albumvirtualview so multi-audio-stream Matroska albums produce
+    // one row per virtual rendition — same shape as the main Albums browser.
     std::string strSQL =
         PrepareSQL("SELECT albumview.*, albumartistview.* "
                    "FROM (SELECT idAlbum FROM albumview WHERE albumview.lastplayed IS NOT NULL "
                    "AND albumview.strReleaseType = '%s' "
                    "ORDER BY albumview.lastplayed DESC LIMIT %u) as playedalbums "
-                   "JOIN albumview ON albumview.idAlbum = playedalbums.idAlbum "
+                   "JOIN albumvirtualview AS albumview ON albumview.idAlbum = playedalbums.idAlbum "
                    "JOIN albumartistview ON albumview.idAlbum = albumartistview.idAlbum "
-                   "ORDER BY albumview.lastplayed DESC, albumartistview.iorder ",
+                   "ORDER BY albumview.lastplayed DESC, albumview.iStream, albumartistview.iorder ",
                    AudioType::ToStdString(AudioType::Content::Album).c_str(), RECENTLY_PLAYED_LIMIT);
 
     auto queryStart = std::chrono::steady_clock::now();
@@ -4222,16 +4233,22 @@ bool CMusicDatabase::GetRecentlyPlayedAlbums(std::vector<CAlbum>& albums)
       return true;
     }
 
-    int albumArtistOffset = album_enumCount;
+    constexpr int kAlbumVirtualExtras = 7;
+    int albumArtistOffset = album_enumCount + kAlbumVirtualExtras;
     int albumId = -1;
+    int streamId = -1;
     while (!m_pDS->eof())
     {
       const dbiplus::sql_record* const record = m_pDS->get_sql_record();
-
-      if (albumId != record->at(album_idAlbum).get_asInt())
-      { // New album
-        albumId = record->at(album_idAlbum).get_asInt();
+      const int rowAlbumId = record->at(album_idAlbum).get_asInt();
+      const int rowStreamId = record->at(album_iStream).get_asInt();
+      if (albumId != rowAlbumId || streamId != rowStreamId)
+      { // New (album, rendition) pair
+        albumId = rowAlbumId;
+        streamId = rowStreamId;
         albums.push_back(GetAlbumFromDataset(record));
+        albums.back().iStream = rowStreamId;
+        albums.back().idStreamDetail = record->at(album_idStreamDetail).get_asInt();
       }
       // Get album artists
       albums.back().artistCredits.push_back(GetArtistCreditFromDataset(record, albumArtistOffset));
@@ -4354,16 +4371,18 @@ bool CMusicDatabase::GetRecentlyAddedAlbums(std::vector<CAlbum>& albums, unsigne
     if (nullptr == m_pDS)
       return false;
 
-    // Get data from album and album_artist tables to fully populate albums
-    // Determine the recently added albums from dateAdded (usually derived from music file
-    // timestamps, nothing to do with when albums added to library)
+    // Get data from album and album_artist tables to fully populate albums.
+    // Determine the recently added albums from dateAdded (usually derived from
+    // music file timestamps, nothing to do with when albums added to library).
+    // Source is albumvirtualview so multi-audio-stream Matroska albums produce
+    // one row per virtual rendition — same shape as the main Albums browser.
     std::string strSQL =
         PrepareSQL("SELECT albumview.*, albumartistview.* "
                    "FROM (SELECT idAlbum FROM album WHERE strAlbum != '' AND strReleaseType = '%s' "
                    "ORDER BY dateAdded DESC LIMIT %u) AS recentalbums "
-                   "JOIN albumview ON albumview.idAlbum = recentalbums.idAlbum "
+                   "JOIN albumvirtualview AS albumview ON albumview.idAlbum = recentalbums.idAlbum "
                    "JOIN albumartistview ON albumview.idAlbum = albumartistview.idAlbum "
-                   "ORDER BY dateAdded DESC, albumview.idAlbum desc, albumartistview.iOrder ",
+                   "ORDER BY dateAdded DESC, albumview.idAlbum desc, albumview.iStream, albumartistview.iOrder ",
                    AudioType::ToStdString(AudioType::Content::Album).c_str(),
                    limit ? limit
                          : CServiceBroker::GetSettingsComponent()
@@ -4380,16 +4399,25 @@ bool CMusicDatabase::GetRecentlyAddedAlbums(std::vector<CAlbum>& albums, unsigne
       return true;
     }
 
-    int albumArtistOffset = album_enumCount;
+    // albumvirtualview adds seven columns after album_iAlbumDuration
+    // (iStream, idStreamDetail, bHasVideoStream, strVideoCodec, iVideoWidth,
+    // iVideoHeight, strHdrType) before the JOINed albumartistview columns.
+    constexpr int kAlbumVirtualExtras = 7;
+    int albumArtistOffset = album_enumCount + kAlbumVirtualExtras;
     int albumId = -1;
+    int streamId = -1;
     while (!m_pDS->eof())
     {
       const dbiplus::sql_record* const record = m_pDS->get_sql_record();
-
-      if (albumId != record->at(album_idAlbum).get_asInt())
-      { // New album
-        albumId = record->at(album_idAlbum).get_asInt();
+      const int rowAlbumId = record->at(album_idAlbum).get_asInt();
+      const int rowStreamId = record->at(album_iStream).get_asInt();
+      if (albumId != rowAlbumId || streamId != rowStreamId)
+      { // New (album, rendition) pair
+        albumId = rowAlbumId;
+        streamId = rowStreamId;
         albums.push_back(GetAlbumFromDataset(record));
+        albums.back().iStream = rowStreamId;
+        albums.back().idStreamDetail = record->at(album_idStreamDetail).get_asInt();
       }
       // Get album artists
       albums.back().artistCredits.push_back(GetArtistCreditFromDataset(record, albumArtistOffset));

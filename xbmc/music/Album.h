@@ -182,4 +182,11 @@ public:
   int iSampleRate = 0;
   int iBitsPerSample = 0;
   int iAlbumDuration = 0;
+  // Audio-Streams virtual-rendition selection (only populated when this CAlbum
+  // came from a `SELECT albumvirtualview.*` query). iStream is the FFmpeg
+  // AVStream index of the chosen audio stream; idStreamDetail is the matching
+  // streamdetails row id, used as the "this is a real rendition" signal
+  // (0 = non-Matroska / single-stream / no rendition).
+  int iStream = 0;
+  int idStreamDetail = 0;
 };

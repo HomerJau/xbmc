@@ -12,6 +12,8 @@
 #include "FileItemList.h"
 #include "music/Album.h"
 #include "music/MusicDatabase.h"
+#include "music/MusicDbUrl.h"
+#include "music/tags/MusicInfoTag.h"
 #include "utils/StringUtils.h"
 
 using namespace XFILE::MUSICDATABASEDIRECTORY;
@@ -53,8 +55,28 @@ bool CDirectoryNodeAlbumTop100::GetContent(CFileItemList& items) const
 
   for (const CAlbum& album : albums)
   {
-    std::string strDir = StringUtils::Format("{}{}/", BuildPath(), album.idAlbum);
-    CFileItemPtr pItem(new CFileItem(strDir, album));
+    // Build the musicdb:// URL with optional streamid option for the virtual
+    // rendition. Mirrors GetAlbumsByWhere so the row reads like a distinct
+    // rendition and playback honours the selection.
+    CMusicDbUrl itemUrl;
+    itemUrl.FromString(BuildPath());
+    itemUrl.AppendPath(StringUtils::Format("{}/", album.idAlbum));
+    if (album.idStreamDetail > 0)
+      itemUrl.AddOption("streamid", album.iStream);
+
+    CFileItemPtr pItem(new CFileItem(itemUrl.ToString(), album));
+    if (album.idStreamDetail > 0)
+    {
+      if (!album.strCodec.empty())
+      {
+        std::string suffix = " [" + album.strCodec;
+        if (album.iChannels > 0)
+          suffix += StringUtils::Format(" {}ch", album.iChannels);
+        suffix += "]";
+        pItem->SetLabel(pItem->GetLabel() + suffix);
+      }
+      pItem->GetMusicInfoTag()->SetPreferredAudioStreamIndex(album.iStream);
+    }
     items.Add(pItem);
   }
 
