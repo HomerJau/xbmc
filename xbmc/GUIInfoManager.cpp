@@ -7704,7 +7704,7 @@ constexpr std::array<InfoMap, 3> container_str = {{
 /// -----------------------------------------------------------------------------
 // clang-format off
 
-constexpr std::array<InfoMap, 231> listitem_labels = {{
+constexpr std::array<InfoMap, 237> listitem_labels = {{
                                   {"thumb",            LISTITEM_THUMB },
                                   { "icon",             LISTITEM_ICON },
                                   { "actualicon",       LISTITEM_ACTUAL_ICON },
