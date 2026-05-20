@@ -1120,6 +1120,14 @@ private:
     // the row came from a `SELECT albumvirtualview.*` query.
     album_iStream = album_enumCount,
     album_idStreamDetail,
+    // Video-row exposure (v88): per-album video stream surfaced via LEFT JOIN
+    // on streamdetails (iStreamType=0). Columns are NULL for non-concert
+    // albums; bHasVideoStream is the cheap boolean check.
+    album_bHasVideoStream,
+    album_strVideoCodec,
+    album_iVideoWidth,
+    album_iVideoHeight,
+    album_strHdrType,
   };
 
   // Fields should be ordered as they

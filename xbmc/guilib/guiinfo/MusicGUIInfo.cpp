@@ -429,6 +429,50 @@ bool CMusicGUIInfo::GetLabel(std::string& value,
         value = MakeMusicChannelsString(tag->GetCodec(), tag->GetNoOfChannels());
         return true;
 
+      case LISTITEM_MUSIC_VIDEO_CODEC:
+      case MUSICPLAYER_VIDEO_CODEC:
+        if (tag->HasVideoStream())
+          value = tag->GetVideoStream().strVideoCodec;
+        return true;
+
+      case LISTITEM_MUSIC_VIDEO_WIDTH:
+      case MUSICPLAYER_VIDEO_WIDTH:
+        if (tag->HasVideoStream() && tag->GetVideoStream().iVideoWidth > 0)
+        {
+          value = std::to_string(tag->GetVideoStream().iVideoWidth);
+          return true;
+        }
+        break;
+
+      case LISTITEM_MUSIC_VIDEO_HEIGHT:
+      case MUSICPLAYER_VIDEO_HEIGHT:
+        if (tag->HasVideoStream() && tag->GetVideoStream().iVideoHeight > 0)
+        {
+          value = std::to_string(tag->GetVideoStream().iVideoHeight);
+          return true;
+        }
+        break;
+
+      case LISTITEM_MUSIC_VIDEO_RESOLUTION:
+      case MUSICPLAYER_VIDEO_RESOLUTION:
+        if (tag->HasVideoStream())
+        {
+          const int w = tag->GetVideoStream().iVideoWidth;
+          const int h = tag->GetVideoStream().iVideoHeight;
+          if (w > 0 && h > 0)
+          {
+            value = StringUtils::Format("{}x{}", w, h);
+            return true;
+          }
+        }
+        break;
+
+      case LISTITEM_MUSIC_HDR_TYPE:
+      case MUSICPLAYER_HDR_TYPE:
+        if (tag->HasVideoStream())
+          value = tag->GetVideoStream().strHdrType;
+        return true;
+
       case LISTITEM_ALBUMSTATUS:
         value = tag->GetAlbumReleaseStatus();
         return true;
@@ -789,6 +833,14 @@ bool CMusicGUIInfo::GetBool(bool& value,
       if (tag)
       {
         value = (item->GetMusicInfoTag()->GetTotalDiscs() > 1);
+        return true;
+      }
+      break;
+    case LISTITEM_MUSIC_HAS_VIDEO_STREAM:
+    case MUSICPLAYER_HAS_VIDEO_STREAM:
+      if (tag)
+      {
+        value = tag->HasVideoStream();
         return true;
       }
       break;

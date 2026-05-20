@@ -426,6 +426,15 @@ constexpr uint32_t MUSICPM_MATCHINGSONGSLEFT         = 394;
 constexpr uint32_t MUSICPM_RELAXEDSONGSPICKED        = 395;
 constexpr uint32_t MUSICPM_RANDOMSONGSPICKED         = 396;
 
+// MusicPlayer video-stream infolabels (Concert MKV) — populated from the
+// per-album streamdetails video row exposed by albumvirtualview.
+constexpr uint32_t MUSICPLAYER_HAS_VIDEO_STREAM      = 397;
+constexpr uint32_t MUSICPLAYER_VIDEO_CODEC           = 398;
+constexpr uint32_t MUSICPLAYER_VIDEO_WIDTH           = 399;
+constexpr uint32_t MUSICPLAYER_VIDEO_HEIGHT          = 407;
+constexpr uint32_t MUSICPLAYER_VIDEO_RESOLUTION      = 408;
+constexpr uint32_t MUSICPLAYER_HDR_TYPE              = 409;
+
 constexpr uint32_t PLAYLIST_LENGTH                   = 400;
 constexpr uint32_t PLAYLIST_POSITION                 = 401;
 constexpr uint32_t PLAYLIST_RANDOM                   = 402;
@@ -1060,6 +1069,12 @@ constexpr uint32_t LISTITEM_VIDEO_HDR_DETAIL         = LISTITEM_START + 227;
 constexpr uint32_t LISTITEM_MUSIC_BITSPERSAMPLE      = LISTITEM_START + 228;
 constexpr uint32_t LISTITEM_MUSIC_CODEC              = LISTITEM_START + 229;
 constexpr uint32_t LISTITEM_MUSIC_CHANNELS_STRING    = LISTITEM_START + 230;
+constexpr uint32_t LISTITEM_MUSIC_HAS_VIDEO_STREAM   = LISTITEM_START + 231;
+constexpr uint32_t LISTITEM_MUSIC_VIDEO_CODEC        = LISTITEM_START + 232;
+constexpr uint32_t LISTITEM_MUSIC_VIDEO_WIDTH        = LISTITEM_START + 233;
+constexpr uint32_t LISTITEM_MUSIC_VIDEO_HEIGHT       = LISTITEM_START + 234;
+constexpr uint32_t LISTITEM_MUSIC_VIDEO_RESOLUTION   = LISTITEM_START + 235;
+constexpr uint32_t LISTITEM_MUSIC_HDR_TYPE           = LISTITEM_START + 236;
 
 constexpr int      LISTITEM_END                      = LISTITEM_START + 2500;
 

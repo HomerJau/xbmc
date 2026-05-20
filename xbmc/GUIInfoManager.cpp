@@ -2973,7 +2973,7 @@ constexpr std::array<InfoMap, 7> musicpartymode = {{
 ///
 /// -----------------------------------------------------------------------------
 // clang-format off
-constexpr std::array<InfoMap, 46> musicplayer = {{
+constexpr std::array<InfoMap, 52> musicplayer = {{
     {"title",               MUSICPLAYER_TITLE},
     {"album",               MUSICPLAYER_ALBUM},
     {"artist",              MUSICPLAYER_ARTIST},
@@ -3020,6 +3020,12 @@ constexpr std::array<InfoMap, 46> musicplayer = {{
     {"totaldiscs",          MUSICPLAYER_TOTALDISCS},
     {"station",             MUSICPLAYER_STATIONNAME},
     {"mediaproviders",      MUSICPLAYER_MEDIAPROVIDERS},
+    {"hasvideostream",      MUSICPLAYER_HAS_VIDEO_STREAM},
+    {"videocodec",          MUSICPLAYER_VIDEO_CODEC},
+    {"videowidth",          MUSICPLAYER_VIDEO_WIDTH},
+    {"videoheight",         MUSICPLAYER_VIDEO_HEIGHT},
+    {"videoresolution",     MUSICPLAYER_VIDEO_RESOLUTION},
+    {"hdrtype",             MUSICPLAYER_HDR_TYPE},
 }};
 // clang-format on
 
@@ -7581,6 +7587,66 @@ constexpr std::array<InfoMap, 3> container_str = {{
 ///     @skinning_v21 **[New Infolabel]** \link ListItem_MusicChannelsString `ListItem.MusicChannelsString`\endlink
 ///     <p>
 ///   }
+///   \table_row3{   <b>`ListItem.MusicHasVideoStream`</b>,
+///                  \anchor ListItem_MusicHasVideoStream
+///                  _boolean_,
+///     @return **True** when the music item carries a video stream
+///             (Concert MKV / video-bearing music file). Use to gate skin
+///             elements that only make sense for video-bearing music.
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link ListItem_MusicHasVideoStream `ListItem.MusicHasVideoStream`\endlink
+///     <p>
+///   }
+///   \table_row3{   <b>`ListItem.MusicVideoCodec`</b>,
+///                  \anchor ListItem_MusicVideoCodec
+///                  _string_,
+///     @return The video codec of a Concert MKV music item (e.g. "h264"\, "hevc")
+///             or empty string when no video stream is present.
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link ListItem_MusicVideoCodec `ListItem.MusicVideoCodec`\endlink
+///     <p>
+///   }
+///   \table_row3{   <b>`ListItem.MusicVideoWidth`</b>,
+///                  \anchor ListItem_MusicVideoWidth
+///                  _integer_,
+///     @return The video-stream pixel width of a music item or empty string
+///             when no video stream is present.
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link ListItem_MusicVideoWidth `ListItem.MusicVideoWidth`\endlink
+///     <p>
+///   }
+///   \table_row3{   <b>`ListItem.MusicVideoHeight`</b>,
+///                  \anchor ListItem_MusicVideoHeight
+///                  _integer_,
+///     @return The video-stream pixel height of a music item or empty string
+///             when no video stream is present. Use \c String.Contains to
+///             match raw heights (e.g. 2160 for 4K\, 1080 for FHD).
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link ListItem_MusicVideoHeight `ListItem.MusicVideoHeight`\endlink
+///     <p>
+///   }
+///   \table_row3{   <b>`ListItem.MusicVideoResolution`</b>,
+///                  \anchor ListItem_MusicVideoResolution
+///                  _string_,
+///     @return Video-stream pixel dimensions of a music item as
+///             "<width>x<height>" (e.g. "1920x1080"\, "3840x2160"\,
+///             "1280x720"). Empty string when no video stream is present
+///             or either dimension is zero. Skin authors can match raw
+///             resolutions via \c String.Contains (e.g. \c String.Contains
+///             matching "2160" detects 4K).
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link ListItem_MusicVideoResolution `ListItem.MusicVideoResolution`\endlink
+///     <p>
+///   }
+///   \table_row3{   <b>`ListItem.MusicHdrType`</b>,
+///                  \anchor ListItem_MusicHdrType
+///                  _string_,
+///     @return HDR type of a music item's video stream: "hdr10"\, "hlg"\,
+///             "dolbyvision" or empty for SDR / no video.
+///     <p><hr>
+///     @skinning_v22 **[New Infolabel]** \link ListItem_MusicHdrType `ListItem.MusicHdrType`\endlink
+///     <p>
+///   }
 ///   \table_row3{   <b>`ListItem.PVRClientName`</b>,
 ///                  \anchor ListItem_PVRClientName
 ///                  _string_,
@@ -7870,6 +7936,12 @@ constexpr std::array<InfoMap, 231> listitem_labels = {{
                                   { "musicbitspersample", LISTITEM_MUSIC_BITSPERSAMPLE },
                                   { "musiccodec",       LISTITEM_MUSIC_CODEC },
                                   { "musicchannelsstring", LISTITEM_MUSIC_CHANNELS_STRING },
+                                  { "musichasvideostream", LISTITEM_MUSIC_HAS_VIDEO_STREAM },
+                                  { "musicvideocodec",  LISTITEM_MUSIC_VIDEO_CODEC },
+                                  { "musicvideowidth",  LISTITEM_MUSIC_VIDEO_WIDTH },
+                                  { "musicvideoheight", LISTITEM_MUSIC_VIDEO_HEIGHT },
+                                  { "musicvideoresolution", LISTITEM_MUSIC_VIDEO_RESOLUTION },
+                                  { "musichdrtype",     LISTITEM_MUSIC_HDR_TYPE },
 }};
 // clang-format on
 

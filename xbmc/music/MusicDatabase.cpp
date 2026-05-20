@@ -715,15 +715,20 @@ void CMusicDatabase::CreateViews()
               "       iAlbumDuration, "
               "       asv.iStream AS iStream, "
               "       asv.idStreamDetail AS idStreamDetail, "
-              // Concert-MKV detection: true if any streamdetails row for this
-              // album is a video stream (iStreamType = 0). Skin code reads this
-              // via songvirtualview.bHasVideoStream / albumvirtualview.bHasVideoStream
-              // to decide whether to surface video codec InfoLabels.
-              "       EXISTS(SELECT 1 FROM streamdetails sdv "
-              "               WHERE sdv.idAlbum = album.idAlbum AND sdv.iStreamType = 0) "
-              "         AS bHasVideoStream "
+              // Video-row exposure: the per-album video row (iStreamType=0)
+              // is LEFT JOINed so columns are NULL when absent (no concert).
+              // bHasVideoStream is a non-NULL boolean derived from sdvid for
+              // skin condition use; the *Video* columns power the new
+              // ListItem.MusicVideo* / MusicPlayer.Video* InfoLabels.
+              "       (sdvid.idStreamDetail IS NOT NULL) AS bHasVideoStream, "
+              "       sdvid.strVideoCodec AS strVideoCodec, "
+              "       sdvid.iVideoWidth AS iVideoWidth, "
+              "       sdvid.iVideoHeight AS iVideoHeight, "
+              "       sdvid.strHdrType AS strHdrType "
               "  FROM album "
-              "  JOIN albumstreamview asv ON album.idAlbum = asv.idAlbum");
+              "  JOIN albumstreamview asv ON album.idAlbum = asv.idAlbum "
+              "  LEFT JOIN streamdetails sdvid ON sdvid.idAlbum = album.idAlbum "
+              "                               AND sdvid.iStreamType = 0");
 
   // Same shape as songview. LEFT JOIN streamdetails on idSong: non-Matroska songs
   // match 0 rows (1 row per song); Matroska songs match N rows (N per stream).
@@ -772,14 +777,23 @@ void CMusicDatabase::CreateViews()
               "        song.dateModified AS dateModified, "
               "        COALESCE(sd.iStreamIndex, 0) AS iStream, "
               "        sd.idStreamDetail AS idStreamDetail, "
-              "        EXISTS(SELECT 1 FROM streamdetails sdv "
-              "                WHERE sdv.idSong = song.idSong AND sdv.iStreamType = 0) "
-              "          AS bHasVideoStream "
+              // Video-row exposure: the per-album video row (iStreamType=0)
+              // is LEFT JOINed so columns are NULL when absent. Matching by
+              // idAlbum (not idSong) because chaptered Concert MKVs share
+              // one video row across all chapters — the row's idSong is
+              // arbitrary (last chapter to write it).
+              "        (sdvid.idStreamDetail IS NOT NULL) AS bHasVideoStream, "
+              "        sdvid.strVideoCodec AS strVideoCodec, "
+              "        sdvid.iVideoWidth AS iVideoWidth, "
+              "        sdvid.iVideoHeight AS iVideoHeight, "
+              "        sdvid.strHdrType AS strHdrType "
               "FROM song "
               "  JOIN album ON song.idAlbum=album.idAlbum "
               "  JOIN path ON song.idPath=path.idPath "
               "  LEFT JOIN streamdetails sd ON sd.idSong = song.idSong "
-              "                            AND sd.iStreamType = 1");
+              "                            AND sd.iStreamType = 1 "
+              "  LEFT JOIN streamdetails sdvid ON sdvid.idAlbum = song.idAlbum "
+              "                               AND sdvid.iStreamType = 0");
 }
 
 void CMusicDatabase::CreateNativeDBFunctions()
@@ -6403,6 +6417,19 @@ bool CMusicDatabase::GetAlbumsByWhere(const std::string& baseDir,
           }
           pItem->GetMusicInfoTag()->SetPreferredAudioStreamIndex(virtualStream);
         }
+        // Video-stream propagation (v88). Concert MKVs have a per-album video
+        // row exposed by albumvirtualview's LEFT JOIN; surface it on the music
+        // tag so skin authors can read ListItem.MusicVideoCodec etc.
+        if (record->at(album_bHasVideoStream).get_asInt() == 1)
+        {
+          MusicVideoStreamInfo videoStream;
+          videoStream.strVideoCodec = record->at(album_strVideoCodec).get_asString();
+          videoStream.iVideoWidth = record->at(album_iVideoWidth).get_asInt();
+          videoStream.iVideoHeight = record->at(album_iVideoHeight).get_asInt();
+          videoStream.strHdrType = record->at(album_strHdrType).get_asString();
+          pItem->GetMusicInfoTag()->SetVideoStream(videoStream);
+          pItem->GetMusicInfoTag()->SetHasVideoStream(true);
+        }
         // Set icon now to avoid slow per item processing in FillInDefaultIcon later
         pItem->SetProperty("icon_never_overlay", true);
         pItem->SetArt("icon", "DefaultAlbumCover.png");
@@ -6833,10 +6860,13 @@ bool CMusicDatabase::GetSongsFullByWhere(const std::string& baseDir,
 
     // Get songs from returned rows. If join songartistview then there is a row for every artist
     items.Reserve(total);
-    // Audio-Streams feature: when querying songvirtualview, two extra columns
-    // (iStream, idStreamDetail) sit between songview's columns and
-    // songartistview's, so the artist-credit offset needs to skip past them.
-    int songArtistOffset = song_enumCount + (useStreamView ? 2 : 0);
+    // Audio-Streams feature: when querying songvirtualview, seven extra
+    // columns sit between songview's columns and songartistview's, so the
+    // artist-credit offset needs to skip past them:
+    //   iStream, idStreamDetail (v86), then bHasVideoStream, strVideoCodec,
+    //   iVideoWidth, iVideoHeight, strHdrType (v88).
+    constexpr int kSongVirtualExtraCols = 7;
+    int songArtistOffset = song_enumCount + (useStreamView ? kSongVirtualExtraCols : 0);
     int songId = -1;
     std::vector<CArtistCredit> artistCredits;
     const dbiplus::query_data& data = m_pDS->get_result_set().records;
@@ -6867,6 +6897,21 @@ bool CMusicDatabase::GetSongsFullByWhere(const std::string& baseDir,
           {
             const int virtualStream = record->at(song_enumCount).get_asInt();
             item->GetMusicInfoTag()->SetPreferredAudioStreamIndex(virtualStream);
+            // Video-stream propagation (v88). When this song belongs to a
+            // video-bearing album, songvirtualview exposes the album-level
+            // video row at the columns after iStream/idStreamDetail.
+            // Layout: [iStream, idStreamDetail, bHasVideoStream,
+            // strVideoCodec, iVideoWidth, iVideoHeight, strHdrType].
+            if (record->at(song_enumCount + 2).get_asInt() == 1)
+            {
+              MusicVideoStreamInfo videoStream;
+              videoStream.strVideoCodec = record->at(song_enumCount + 3).get_asString();
+              videoStream.iVideoWidth = record->at(song_enumCount + 4).get_asInt();
+              videoStream.iVideoHeight = record->at(song_enumCount + 5).get_asInt();
+              videoStream.strHdrType = record->at(song_enumCount + 6).get_asString();
+              item->GetMusicInfoTag()->SetVideoStream(videoStream);
+              item->GetMusicInfoTag()->SetHasVideoStream(true);
+            }
           }
           //! @todo remove hack to use program count for sorting by database returned order
           count++;
@@ -9923,6 +9968,18 @@ void CMusicDatabase::UpdateTables(int version)
     m_pDS->exec("ALTER TABLE streamdetails ADD COLUMN strSubtitleLanguage text");
   }
 
+  if (version < 88) // expose video columns + fixed bHasVideoStream in virtual views
+  {
+    // No table changes. albumvirtualview / songvirtualview gain LEFT JOIN to
+    // the per-album video row (iStreamType=0) and surface strVideoCodec /
+    // iVideoWidth / iVideoHeight / strHdrType for the new ListItem.MusicVideo*
+    // and MusicPlayer.Video* InfoLabels. Also fixes songvirtualview's
+    // bHasVideoStream — previously matched on idSong (only one chapter saw
+    // true for a chaptered Concert MKV), now matched on idAlbum (every song
+    // in a video-bearing album reports true). Views are recreated by
+    // CreateAnalytics() after this runs.
+  }
+
   // Set the version of tag scanning required.
   // Not every schema change requires the tags to be rescanned, set to the highest schema version
   // that needs this. Forced rescanning (of music files that have not changed since they were
@@ -9943,7 +10000,7 @@ void CMusicDatabase::UpdateTables(int version)
 
 int CMusicDatabase::GetSchemaVersion() const
 {
-  return 87;
+  return 88;
 }
 
 int CMusicDatabase::GetMusicNeedsTagScan()
