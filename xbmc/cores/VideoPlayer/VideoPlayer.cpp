@@ -1043,13 +1043,37 @@ void CVideoPlayer::OpenDefaultStreams(bool reset)
   valid = false;
   if (!m_playerOptions.videoOnly)
   {
-    PredicateAudioFilter af(m_processInfo->GetVideoSettings().m_AudioStream, m_playerOptions.preferStereo);
-    for (const auto& stream : m_SelectionStreams.Get(StreamType::AUDIO, af))
+    // Music-side preferred-stream hint: multi-audio Matroska music files
+    // (Concert MKV virtual renditions) carry a uniqueId on the music tag,
+    // populated by the music scanner via the streamdetails table. When
+    // set, try that stream first so playback honours the rendition the
+    // user picked in the music browser; fall through to the predicate-
+    // based selection if the stream is missing or the hint is unset.
+    int preferredIndex = -1;
+    if (m_item.HasMusicInfoTag())
+      preferredIndex = m_item.GetMusicInfoTag()->GetPreferredAudioStreamIndex();
+    if (preferredIndex >= 0)
     {
-      if(OpenStream(m_CurrentAudio, stream.demuxerId, stream.id, stream.source, reset))
+      for (const auto& stream : m_SelectionStreams.Get(StreamType::AUDIO))
       {
-        valid = true;
-        break;
+        if (stream.id == preferredIndex &&
+            OpenStream(m_CurrentAudio, stream.demuxerId, stream.id, stream.source, reset))
+        {
+          valid = true;
+          break;
+        }
+      }
+    }
+    if (!valid)
+    {
+      PredicateAudioFilter af(m_processInfo->GetVideoSettings().m_AudioStream, m_playerOptions.preferStereo);
+      for (const auto& stream : m_SelectionStreams.Get(StreamType::AUDIO, af))
+      {
+        if(OpenStream(m_CurrentAudio, stream.demuxerId, stream.id, stream.source, reset))
+        {
+          valid = true;
+          break;
+        }
       }
     }
   }
