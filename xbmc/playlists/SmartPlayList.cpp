@@ -146,6 +146,13 @@ static const auto fields = std::array{
   TranslateField{ "hdrdetail",         Field::HDR_DETAIL,                 TEXTIN_FIELD,   nullptr,                              false, 20478 },
   TranslateField{ "albumcodec",        Field::ALBUM_CODEC,                TEXT_FIELD,     nullptr,                              true,  21446 },
   TranslateField{ "bitspersample",     Field::BITS_PER_SAMPLE,            TEXT_FIELD,     nullptr,                              true,  612 },
+  // Video-stream fields sourced from streamdetails iStreamType=0 (Concert MKVs)
+  TranslateField{ "albumvideocodec",      Field::ALBUM_VIDEO_CODEC,       TEXTIN_FIELD,   nullptr,                              false, 21445 },
+  TranslateField{ "albumvideoresolution", Field::ALBUM_VIDEO_RESOLUTION,  TEXT_FIELD,     nullptr,                              false, 21443 },
+  TranslateField{ "albumvideoaspect",     Field::ALBUM_VIDEO_ASPECT,      REAL_FIELD,     nullptr,                              false, 21374 },
+  TranslateField{ "albumhdrtype",         Field::ALBUM_HDR_TYPE,          TEXTIN_FIELD,   nullptr,                              false, 20474 },
+  TranslateField{ "albumstereomode",      Field::ALBUM_STEREO_MODE,       TEXT_FIELD,     nullptr,                              false, 21331 },
+  TranslateField{ "albumvideolanguage",   Field::ALBUM_VIDEO_LANGUAGE,    TEXT_FIELD,     nullptr,                              false, 21447 },
   TranslateField{ "ismusicconcert",    Field::IS_MUSIC_CONCERT,           BOOLEAN_FIELD,  nullptr,                              false, 21486},
   TranslateField{ "isaudiobook",       Field::IS_AUDIOBOOK,               BOOLEAN_FIELD,  nullptr,                              false, 21487},
 };
@@ -381,7 +388,12 @@ std::vector<Field> CSmartPlaylistRule::GetFields(const std::string& type)
                                     Field::DATE_NEW,
                                     Field::IS_AUDIOBOOK,
                                     Field::IS_MUSIC_CONCERT,
-
+                                    Field::ALBUM_VIDEO_CODEC,
+                                    Field::ALBUM_VIDEO_RESOLUTION,
+                                    Field::ALBUM_VIDEO_ASPECT,
+                                    Field::ALBUM_HDR_TYPE,
+                                    Field::ALBUM_STEREO_MODE,
+                                    Field::ALBUM_VIDEO_LANGUAGE,
                                 });
   }
   else if (type == "artists")
@@ -962,18 +974,69 @@ std::string CSmartPlaylistRule::FormatWhereClause(const std::string& negate,
               " EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
               GetField(static_cast<int>(Field::ID), strType) + " AND song.strDiscSubtitle" +
               parameter + ")";
-    else if (m_field == static_cast<int>(Field ::ALBUM_CODEC))
-      query = negate + " EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
-              GetField(static_cast<int>(Field::ALBUM_CODEC), strType) + " AND song.strCodec " +
-              parameter + ")";
+    // Audio-side album filters: streamdetails-aware two-arm pattern.
+    // First arm matches Matroska multi-stream albums (Atmos/5.1/Stereo) by
+    // checking ANY audio stream on ANY song; second arm matches non-Matroska
+    // albums via the legacy song.* columns. The NOT EXISTS subquery on the
+    // second arm prevents double-matching Matroska songs (which have BOTH
+    // streamdetails rows AND non-zero song.strCodec).
+    else if (m_field == static_cast<int>(Field::ALBUM_CODEC))
+    {
+      const std::string idCol = GetField(static_cast<int>(Field::ID), strType);
+      query = negate +
+              " (EXISTS (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = " + idCol +
+              " AND sd.iStreamType = 1 AND sd.strCodec " + parameter + ")"
+              " OR EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " + idCol +
+              " AND NOT EXISTS (SELECT 1 FROM streamdetails sd2 WHERE sd2.idSong = song.idSong)"
+              " AND song.strCodec " + parameter + "))";
+    }
     else if (m_field == static_cast<int>(Field::BITS_PER_SAMPLE))
-      query = negate + " EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
-              GetField(static_cast<int>(Field::BITS_PER_SAMPLE), strType) +
-              " AND song.iBitsPerSample " + parameter + ")";
+    {
+      const std::string idCol = GetField(static_cast<int>(Field::ID), strType);
+      query = negate +
+              " (EXISTS (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = " + idCol +
+              " AND sd.iStreamType = 1 AND sd.iBitsPerSample " + parameter + ")"
+              " OR EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " + idCol +
+              " AND NOT EXISTS (SELECT 1 FROM streamdetails sd2 WHERE sd2.idSong = song.idSong)"
+              " AND song.iBitsPerSample " + parameter + "))";
+    }
     else if (m_field == static_cast<int>(Field::NUMBER_OF_CHANNELS))
-      query = negate + "EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
-              GetField(static_cast<int>(Field::NUMBER_OF_CHANNELS), strType) +
-              " AND song.iChannels " + parameter + ")";
+    {
+      const std::string idCol = GetField(static_cast<int>(Field::ID), strType);
+      query = negate +
+              " (EXISTS (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = " + idCol +
+              " AND sd.iStreamType = 1 AND sd.iChannels " + parameter + ")"
+              " OR EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " + idCol +
+              " AND NOT EXISTS (SELECT 1 FROM streamdetails sd2 WHERE sd2.idSong = song.idSong)"
+              " AND song.iChannels " + parameter + "))";
+    }
+    // Video-side album filters: single-arm — only Concert MKV albums have
+    // streamdetails iStreamType=0 rows; no song.* fallback exists.
+    else if (m_field == static_cast<int>(Field::ALBUM_VIDEO_CODEC))
+      query = negate + " EXISTS (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = " +
+              GetField(static_cast<int>(Field::ID), strType) +
+              " AND sd.iStreamType = 0 AND sd.strVideoCodec " + parameter + ")";
+    else if (m_field == static_cast<int>(Field::ALBUM_VIDEO_RESOLUTION))
+      query = negate + " EXISTS (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = " +
+              GetField(static_cast<int>(Field::ID), strType) +
+              " AND sd.iStreamType = 0 AND (sd.iVideoWidth || 'x' || sd.iVideoHeight) " +
+              parameter + ")";
+    else if (m_field == static_cast<int>(Field::ALBUM_VIDEO_ASPECT))
+      query = negate + " EXISTS (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = " +
+              GetField(static_cast<int>(Field::ID), strType) +
+              " AND sd.iStreamType = 0 AND sd.fVideoAspect " + parameter + ")";
+    else if (m_field == static_cast<int>(Field::ALBUM_HDR_TYPE))
+      query = negate + " EXISTS (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = " +
+              GetField(static_cast<int>(Field::ID), strType) +
+              " AND sd.iStreamType = 0 AND sd.strHdrType " + parameter + ")";
+    else if (m_field == static_cast<int>(Field::ALBUM_STEREO_MODE))
+      query = negate + " EXISTS (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = " +
+              GetField(static_cast<int>(Field::ID), strType) +
+              " AND sd.iStreamType = 0 AND sd.strStereoMode " + parameter + ")";
+    else if (m_field == static_cast<int>(Field::ALBUM_VIDEO_LANGUAGE))
+      query = negate + " EXISTS (SELECT 1 FROM streamdetails sd WHERE sd.idAlbum = " +
+              GetField(static_cast<int>(Field::ID), strType) +
+              " AND sd.iStreamType = 0 AND sd.strVideoLanguage " + parameter + ")";
     else if (m_field == static_cast<int>(Field::YEAR) ||
              m_field == static_cast<int>(Field::ORIG_YEAR))
     {

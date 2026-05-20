@@ -155,6 +155,14 @@ enum class Field
   HAS_VIDEO_EXTRAS,
   ALBUM_CODEC,
   BITS_PER_SAMPLE,
+  // Music album-content filters sourced from streamdetails iStreamType=0 rows
+  // (one per Concert MKV file, shared across chapters).
+  ALBUM_VIDEO_CODEC,
+  ALBUM_VIDEO_RESOLUTION, // combined "1920x1080" string form
+  ALBUM_VIDEO_ASPECT,
+  ALBUM_HDR_TYPE,
+  ALBUM_STEREO_MODE,
+  ALBUM_VIDEO_LANGUAGE,
   IS_MUSIC_CONCERT,
   IS_AUDIOBOOK,
   MAX
