@@ -1501,9 +1501,10 @@ bool CMusicDatabase::GetSong(int idSong, CSong& song)
 
     // Load per-stream metadata for playback / display. Cheap single-query
     // lookup; empty audio + no video when this isn't a Matroska multi-stream
-    // file or Concert MKV.
-    GetStreamDetailsForSong(idSong, song.m_audioStreams, song.m_videoStream,
-                            song.m_bHasVideoStream);
+    // file or Concert MKV. idAlbum is needed because the video row is
+    // album-scoped (chaptered Concert MKVs share one row across all chapters).
+    GetStreamDetailsForSong(idSong, song.idAlbum, song.m_audioStreams,
+                            song.m_videoStream, song.m_bHasVideoStream);
     if (!song.m_audioStreams.empty())
     {
       // PaPlayer reads this to pick which stream to decode (see VideoPlayerCodec::Init).
@@ -1544,9 +1545,10 @@ bool CMusicDatabase::SetStreamDetailsForSong(int idSong,
       return false;
 
     // Atomic rewrite: clear any prior rows for this song, then insert the new
-    // set (audio rows then, optionally, one video row). Skip the work entirely
-    // when there's nothing — empty audio vector + no video = common non-
-    // Matroska case where the DELETE almost always hits zero rows.
+    // set (audio rows then, optionally, one video row). Audio rows are scoped
+    // per-song; video rows are scoped per-album (see video INSERT below).
+    // Skip the work entirely when there's nothing — empty audio vector + no
+    // video = common non-Matroska case where the DELETE hits zero rows.
     BeginTransaction();
     m_pDS->exec(PrepareSQL("DELETE FROM streamdetails WHERE idSong = %i", idSong));
     for (const auto& s : streams)
@@ -1569,8 +1571,14 @@ bool CMusicDatabase::SetStreamDetailsForSong(int idSong,
     }
     if (hasVideoStream)
     {
-      // One row per song with iStreamType=0 carries Concert-MKV metadata.
-      // iStreamIndex is always 0 — we capture only the first video stream.
+      // Video stream is a FILE-LEVEL fact, not a per-song one. For chaptered
+      // Concert MKVs every chapter (song) of the file shares identical video
+      // metadata, so we collapse to one video row per album. Each chapter's
+      // call DELETEs any prior per-album video row then re-INSERTs identical
+      // data; the final state is exactly one video row per album with idSong
+      // set to whichever chapter was last to write it (arbitrary, harmless).
+      m_pDS->exec(PrepareSQL(
+          "DELETE FROM streamdetails WHERE idAlbum = %i AND iStreamType = 0", idAlbum));
       const std::string sql = PrepareSQL(
           "INSERT INTO streamdetails ("
           " idSong, idAlbum, iStreamType, iStreamIndex,"
@@ -1597,6 +1605,7 @@ bool CMusicDatabase::SetStreamDetailsForSong(int idSong,
 }
 
 bool CMusicDatabase::GetStreamDetailsForSong(int idSong,
+                                             int idAlbum,
                                              std::vector<MusicAudioStreamInfo>& streams,
                                              MusicVideoStreamInfo& videoStream,
                                              bool& hasVideoStream)
@@ -1612,15 +1621,20 @@ bool CMusicDatabase::GetStreamDetailsForSong(int idSong,
       return false;
     // Single query returns both audio and video rows; we branch by iStreamType.
     // ORDER BY iStreamType DESC puts AUDIO (1) before VIDEO (0) — incidental.
+    // Audio rows are matched per-song; the video row (if any) is per-album,
+    // so we OR-match it via idAlbum + iStreamType=0. For chaptered Concert
+    // MKVs every chapter sees the same album-level video row.
     const std::string sql =
         PrepareSQL("SELECT iStreamType, iStreamIndex, strCodec, iChannels, iSampleRate, "
                    "       iBitRate, iBitsPerSample, strLanguage, iFlags, "
                    "       strVideoCodec, iVideoWidth, iVideoHeight, fVideoAspect, "
                    "       iVideoDuration, strStereoMode, strVideoLanguage, "
                    "       strHdrType, strHdrDetail "
-                   "FROM streamdetails WHERE idSong = %i "
+                   "FROM streamdetails "
+                   "WHERE (idSong = %i AND iStreamType = 1) "
+                   "   OR (idAlbum = %i AND iStreamType = 0) "
                    "ORDER BY iStreamType DESC, iStreamIndex",
-                   idSong);
+                   idSong, idAlbum);
     if (!m_pDS->query(sql))
       return false;
     while (!m_pDS->eof())

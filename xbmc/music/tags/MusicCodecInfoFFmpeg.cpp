@@ -35,6 +35,21 @@ int64_t vfs_file_seek(void* h, int64_t pos, int whence)
     return pFile->Seek(pos, whence & ~AVSEEK_FORCE);
 }
 
+// Matroska files store per-stream bitrate in the 'BPS' metadata tag rather
+// than the codec header. codecpar->bit_rate is often 0 for lossless audio in
+// Matroska; fall back to BPS. Mirrors xbmc/cores/VideoPlayer/DVDDemuxers/
+// DVDDemuxFFmpeg.cpp:1590-1598 — music-side copy per the music-only-
+// ownership design. Returns raw bps (callers /1000 for kbps).
+int ResolveBitRate(const AVStream* st)
+{
+  if (st->codecpar->bit_rate > 0)
+    return static_cast<int>(st->codecpar->bit_rate);
+  if (const AVDictionaryEntry* bps = av_dict_get(st->metadata, "BPS", nullptr, 0);
+      bps && bps->value)
+    return static_cast<int>(strtol(bps->value, nullptr, 10));
+  return 0;
+}
+
 // Map FFmpeg color/transfer signalling on a video stream to a Kodi-style HDR
 // type tag. Music-side equivalent of xbmc/cores/VideoPlayer/DVDFileInfo.cpp's
 // logic — deliberately not shared, to keep music ownership of this codepath
@@ -96,7 +111,7 @@ std::string ResolveCodecName(const AVStream* st)
 void FillCodecInfo(const AVStream* st, const AVFormatContext* fctx, musicCodecInfo& codec_info)
 {
   codec_info.codecName = ResolveCodecName(st);
-  codec_info.bitRate = static_cast<int>(st->codecpar->bit_rate / 1000);
+  codec_info.bitRate = ResolveBitRate(st) / 1000;
   codec_info.channels = st->codecpar->ch_layout.nb_channels;
   codec_info.bitsPerSample = (st->codecpar->bits_per_coded_sample != 0)
                                  ? st->codecpar->bits_per_coded_sample
@@ -204,7 +219,7 @@ bool GetCodecInfoInternal(const std::string& strFileName,
           info.strCodec = ResolveCodecName(st);
           info.iChannels = st->codecpar->ch_layout.nb_channels;
           info.iSampleRate = st->codecpar->sample_rate;
-          info.iBitRate = static_cast<int>(st->codecpar->bit_rate / 1000);
+          info.iBitRate = ResolveBitRate(st) / 1000;
           info.iBitsPerSample = (st->codecpar->bits_per_coded_sample != 0)
                                     ? st->codecpar->bits_per_coded_sample
                                     : st->codecpar->bits_per_raw_sample;

@@ -193,10 +193,13 @@ public:
 
   /*! \brief Load per-stream metadata for a song.
    Audio rows populate \a streams; the optional video row populates \a videoStream
-   and sets \a hasVideoStream true. All three out-params are reset on entry.
+   and sets \a hasVideoStream true. The video row is album-scoped (one per
+   file/album, shared across chapters), so \a idAlbum is required to retrieve
+   it. All three out-params are reset on entry.
    \return true on success (including when the song has no streamdetails rows)
    */
   bool GetStreamDetailsForSong(int idSong,
+                               int idAlbum,
                                std::vector<MusicAudioStreamInfo>& streams,
                                MusicVideoStreamInfo& videoStream,
                                bool& hasVideoStream);
