@@ -10019,10 +10019,15 @@ void CMusicDatabase::UpdateTables(int version)
   // The original db version when the tags were scanned, and the minimal db version needed are
   // later used to determine if a forced rescan should be prompted
 
-  // The last schema change needing forced rescanning was 84.
-  // This is because Kodi can now read and process extra info for codec information etc
+  // The last schema change needing forced rescanning was 88.
+  // v88 needs a forced rescan because the v85→v87 path could leave some
+  // songs with empty strCodec + missing streamdetails after the
+  // SetStreamDetailsForSong nested-transaction bug (fixed in b96bce778a).
+  // The scanner skips files whose mtime hasn't changed; a tag-scan-version
+  // bump is the only way to recover those songs without manual per-album
+  // refresh. Pre-v85 was last bumped at 84 (codec info groundwork).
 
-  SetMusicNeedsTagScan(84);
+  SetMusicNeedsTagScan(88);
 
   // After all updates, store the original db version.
   // This indicates the version of tag processing that was used to populate db
