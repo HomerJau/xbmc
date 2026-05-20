@@ -45,6 +45,7 @@
 #include "interfaces/AnnouncementManager.h"
 #include "jobs/JobQueue.h"
 #include "messaging/ApplicationMessenger.h"
+#include "music/tags/MusicInfoTag.h"
 #include "resources/LocalizeStrings.h"
 #include "resources/ResourcesComponent.h"
 #include "settings/AdvancedSettings.h"
