@@ -1570,7 +1570,12 @@ bool CMusicDatabase::SetStreamDetailsForSong(int idSong,
     // per-song; video rows are scoped per-album (see video INSERT below).
     // Skip the work entirely when there's nothing — empty audio vector + no
     // video = common non-Matroska case where the DELETE hits zero rows.
-    BeginTransaction();
+    // Transaction management is caller's responsibility: AddAlbum / UpdateSong
+    // (CSong overload) wrap this in their own outer transaction. Beginning one
+    // here would nest inside the scanner's outer transaction; SQLite refuses
+    // the nested begin and the inner commit then prematurely commits the
+    // outer, corrupting scanner atomicity (observed: missing albums in user
+    // beta logs, 2026-05-20).
     m_pDS->exec(PrepareSQL("DELETE FROM streamdetails WHERE idSong = %i", idSong));
     for (const auto& s : streams)
     {
@@ -1614,12 +1619,10 @@ bool CMusicDatabase::SetStreamDetailsForSong(int idSong,
           videoStream.strHdrDetail.c_str());
       m_pDS->exec(sql);
     }
-    CommitTransaction();
     return true;
   }
   catch (...)
   {
-    RollbackTransaction();
     CLog::LogF(LOGERROR, "({}, {}) failed", idSong, idAlbum);
   }
   return false;
