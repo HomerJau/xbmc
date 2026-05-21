@@ -43,22 +43,98 @@ using namespace MUSIC_INFO;
 namespace
 {
 /*!
- * Map (codec, channel count) to a friendly channel-layout label for skins.
- * Codec-based labels (Atmos, DTS:X) take precedence over raw channel count;
- * for everything else the channel count drives the label. Returns an empty
- * string when no sensible mapping applies — skins can then fall back to
- * the raw codec name or channel count if desired.
+ * Map (codec, channel count, path) to a friendly channel-layout label
+ * for skins. Three layers, checked in order:
  *
- * Collection-specific overrides (e.g. 6ch files that are really Quad with
- * silent rears, filename-hint upmix tags) remain skin-side: those are
- * user-collection conventions, not universally correct heuristics.
+ *  1. Codec-based labels (Atmos, DTS:X) — unambiguous, win first.
+ *  2. Path-based hints. Recover collection-specific intent that the
+ *     raw channel count cannot express. The motivating case is 70s
+ *     Quad music: many users store these files silent-channel-padded
+ *     to 5.0 / 5.1 / 6.1 so legacy AVRs and older players recognise
+ *     them as multichannel instead of down-mixing to stereo. Without
+ *     a path hint, the channel-count switch below would label these
+ *     "5.0" / "5.1" / "6.1" when they're really Quad.
+ *  3. Standard channel-count → label mapping for everything else.
+ *
+ * Returns an empty string when no rule applies — skins can fall back
+ * to ListItem.MusicCodec or ListItem.MusicChannels.
+ *
+ * The `path` argument is the file's full path (caller supplies
+ * tag->GetURL() with item->GetPath() fallback). Hint rules match
+ * against the entire path so parent folder names ("Quad/", "5.1/",
+ * "Quadio/") feed into the decision.
  */
-std::string MakeMusicChannelsString(const std::string& codec, int channels)
+std::string MakeMusicChannelsString(const std::string& codec,
+                                    int channels,
+                                    const std::string& path)
 {
+  // --- Layer 1: codec-based labels ----------------------------------------
   if (codec == "eac3_ddp_atmos" || codec == "truehd_atmos")
     return "Atmos";
   if (codec == "dtshd_ma_x")
     return "DTS:X";
+
+  // --- Layer 2: path-based hints ------------------------------------------
+  //
+  // Order matters — more-specific patterns must come BEFORE general ones,
+  // because the first matching rule wins. Each rule is one if-block of
+  // the form:
+  //
+  //     if (<predicate on path / channels>)
+  //       return "<label>";
+  //
+  // For substring matches use std::string::find:
+  //     path.find("Quad/") != std::string::npos
+  //
+  // For multi-condition rules combine with && and the channel count:
+  //     if (channels == 6 && path.find("Penteo") != std::string::npos
+  //                       && path.find("Quad") != std::string::npos)
+  //       return "4.1 UM";
+  //
+  // Case sensitivity: std::string::find is case-SENSITIVE. If folder names
+  // in the collection vary in case, use StringUtils::FindWords (matches
+  // whole words, case-insensitive) or lowercase a copy of path once at the
+  // top of this block.
+  //
+  // ===== HINT RULES =======================================================
+  //
+  // Quad-padded-with-silence detection. Many 70s Quad files are stored
+  // silent-padded to 5ch / 6ch so legacy AVRs and older players recognise
+  // them as multichannel instead of down-mixing to stereo; the real intent
+  // is "Quad", not "5.0" / "5.1". Without these rules the channel-count
+  // switch below would mis-label them.
+  //
+  // Gate on channels in {4,5,6} so true 5.1 movie-style multichannel and
+  // 7.1 files skip these rules entirely.
+  if (channels >= 4 && channels <= 6)
+  {
+    // Most-specific first: Penteo upmix of a Quad source. Garry's
+    // collection labels these "4.1 UM" when 6ch (Quad + LFE + silent) and
+    // "Quad UM" when 5ch (Quad + silent rear).
+    //
+    // Use "Quad/" with the trailing slash so this matches only the literal
+    // parent folder "Quad/" and NOT album names that happen to start with
+    // "Quad" (e.g. The Who's "Quadrophenia", "Quadromania", "Quadrille"
+    // etc. would false-positive otherwise).
+    if (path.find("Penteo") != std::string::npos &&
+        path.find("Quad/")  != std::string::npos)
+    {
+      return channels == 6 ? "4.1 UM" : "Quad UM";
+    }
+
+    // "Quadio" branding — a specific Quad label/series; show its name.
+    if (path.find("Quadio") != std::string::npos)
+      return "Quadio";
+
+    // Generic Quad folder hint (e.g. .../Quad/<artist>/<album>/...) or
+    // a "4.0" tag anywhere in the path.
+    if (path.find("Quad/") != std::string::npos ||
+        path.find("4.0")   != std::string::npos)
+      return "Quad";
+  }
+  // ========================================================================
+
+  // --- Layer 3: standard channel-count → label ----------------------------
   switch (channels)
   {
     case 1: return "Mono";
@@ -426,8 +502,18 @@ bool CMusicGUIInfo::GetLabel(std::string& value,
         return true;
 
       case LISTITEM_MUSIC_CHANNELS_STRING:
-        value = MakeMusicChannelsString(tag->GetCodec(), tag->GetNoOfChannels());
+      {
+        // Pass the file path so MakeMusicChannelsString can apply
+        // collection-specific path-hint rules (e.g. "padded Quad" recovery).
+        // tag->GetURL() is the canonical music-file URL set by the DB
+        // load path; fall back to item->GetPath() for items that lack
+        // a tag-side URL (rare; defensive).
+        std::string path = tag->GetURL();
+        if (path.empty())
+          path = item->GetPath();
+        value = MakeMusicChannelsString(tag->GetCodec(), tag->GetNoOfChannels(), path);
         return true;
+      }
 
       case LISTITEM_MUSIC_VIDEO_CODEC:
       case MUSICPLAYER_VIDEO_CODEC:
