@@ -108,9 +108,22 @@ std::string MakeMusicChannelsString(const std::string& codec,
   // 7.1 files skip these rules entirely.
   if (channels >= 4 && channels <= 6)
   {
-    // Most-specific first: Penteo upmix of a Quad source. Garry's
-    // collection labels these "4.1 UM" when 6ch (Quad + LFE + silent) and
-    // "Quad UM" when 5ch (Quad + silent rear).
+    // "Quad+" : Quad source with LFE (4 active channels + LFE channel),
+    // stored as 5ch (Quad + LFE) or 6ch (Quad + LFE + silent rear). The
+    // "+" marker is distinctive enough that a bare substring match is
+    // safe — no folder-boundary slash needed, and no realistic album
+    // name contains the literal "Quad+" by accident.
+    //
+    // Runs BEFORE the Penteo rule so a folder like
+    // "Aerosmith - Aerosmith (Quad+ Penteo UM)" returns "Quad+" rather
+    // than the Penteo upmix label.
+    if ((channels == 5 || channels == 6) &&
+        path.find("Quad+") != std::string::npos)
+      return "Quad+";
+
+    // Penteo upmix of a Quad source. Garry's collection labels these
+    // "4.1 UM" when 6ch (Quad + LFE + silent) and "Quad UM" when 5ch
+    // (Quad + silent rear).
     //
     // Use "Quad/" with the trailing slash so this matches only the literal
     // parent folder "Quad/" and NOT album names that happen to start with
