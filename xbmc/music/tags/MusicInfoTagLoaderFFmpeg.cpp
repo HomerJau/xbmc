@@ -213,9 +213,16 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
 
   // Look for any embedded cover art
   CMusicEmbeddedCoverLoaderFFmpeg::GetEmbeddedCover(fctx, tag, art);
+  // Audio codec_info + video-stream extraction on the same demuxer open. Non-Matroska
+  // containers that carry video (concert MP4, .m2ts, .mov, .ts) land in streamdetails
+  // iStreamType = 0 via SetVideoStream. Option B: audio-streams vector intentionally
+  // not collected — codec/bitrate/sampleRate stay on song.* columns.
   bool haveFFmpegInfo = false;
   musicCodecInfo codec_info;
-  haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info);
+  MusicVideoStreamInfo videoStream;
+  bool hasVideoStream = false;
+  haveFFmpegInfo =
+      CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info, videoStream, hasVideoStream);
   if (haveFFmpegInfo) // use data from FFmpeg if taglib data missing or not accurate
   {
     tag.SetBitRate(codec_info.bitRate);
@@ -223,6 +230,11 @@ bool CMusicInfoTagLoaderFFmpeg::Load(const std::string& strFileName,
     tag.SetBitsPerSample(codec_info.bitsPerSample);
     tag.SetCodec(codec_info.codecName);
     tag.SetNoOfChannels(codec_info.channels);
+    if (hasVideoStream)
+    {
+      tag.SetVideoStream(videoStream);
+      tag.SetHasVideoStream(true);
+    }
   }
 
   if (!tag.GetTitle().empty())

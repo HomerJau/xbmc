@@ -329,3 +329,13 @@ bool CMusicCodecInfoFFmpeg::GetMusicCodecInfo(const std::string& strFileName,
   return GetCodecInfoInternal(strFileName, codec_info, &streams, &preferredIndex, &videoStream,
                               &hasVideoStream);
 }
+
+bool CMusicCodecInfoFFmpeg::GetMusicCodecInfo(const std::string& strFileName,
+                                              musicCodecInfo& codec_info,
+                                              MusicVideoStreamInfo& videoStream,
+                                              bool& hasVideoStream)
+{
+  hasVideoStream = false;
+  return GetCodecInfoInternal(strFileName, codec_info, nullptr, nullptr, &videoStream,
+                              &hasVideoStream);
+}

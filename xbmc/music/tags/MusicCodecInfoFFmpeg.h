@@ -61,4 +61,17 @@ public:
                                 int& preferredIndex,
                                 MusicVideoStreamInfo& videoStream,
                                 bool& hasVideoStream);
+
+  /*!
+   \brief Audio codec_info + video-stream extraction WITHOUT the per-audio-stream
+   vector. For non-Matroska tag loaders under Option B — codec/bitrate/sampleRate
+   stay on song.* columns (no streamdetails audio rows), but a video stream in a
+   non-Matroska container (concert MP4, .m2ts, .mov, .ts) still needs to land in
+   the streamdetails iStreamType = 0 row so the v88 view layer exposes its
+   metadata via ListItem.MusicVideo* InfoLabels.
+   */
+  static bool GetMusicCodecInfo(const std::string& strFileName,
+                                musicCodecInfo& codec_info,
+                                MusicVideoStreamInfo& videoStream,
+                                bool& hasVideoStream);
 };

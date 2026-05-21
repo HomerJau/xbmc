@@ -1411,6 +1411,11 @@ bool CTagLoaderTagLib::Load(const std::string& strFileName, CMusicInfoTag& tag, 
     unsigned int bitsPerSample = 0;
     int mpegLayer = 0;
     musicCodecInfo codec_info;
+    // Video-stream side-channel for non-Matroska containers that carry video
+    // (concert MP4 fallback, exotic wav, generic FFmpeg-fallback path). Lands
+    // in streamdetails iStreamType = 0 row via SetVideoStream below.
+    MusicVideoStreamInfo videoStream;
+    bool hasVideoStream = false;
     std::string codec;
     bool haveFFmpegInfo = false;
   
@@ -1449,7 +1454,8 @@ bool CTagLoaderTagLib::Load(const std::string& strFileName, CMusicInfoTag& tag, 
                     ? CodecToString(MusicCodecType::CODEC_TYPE_AAC)
                     : CodecToString(MusicCodecType::CODEC_TYPE_ALAC);
         else
-          haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info);
+          haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(
+              strFileName, codec_info, videoStream, hasVideoStream);
       }
     }
     else if (mpegFile)
@@ -1502,7 +1508,8 @@ bool CTagLoaderTagLib::Load(const std::string& strFileName, CMusicInfoTag& tag, 
       // taglib doesn't detect the correct codec if the wav file wraps eg DTS as the file will have a
       // dummy header indicating PCM. Therefore use FFmpeg for wav files so detection doesn't rely on
       // the header info
-      haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info);
+      haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info,
+                                                                videoStream, hasVideoStream);
     }
     else if (wvFile)
     {
@@ -1529,7 +1536,8 @@ bool CTagLoaderTagLib::Load(const std::string& strFileName, CMusicInfoTag& tag, 
     else if (!mpegFile) // skip mp3 files as no bitspersample available but check other filetypes as
                         // taglib returns the wrong bitrate for at least vorbis files (determined
                         // locally using taglib data, mediainfo and ffprobe for comparisons)
-      haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info);
+      haveFFmpegInfo = CMusicCodecInfoFFmpeg::GetMusicCodecInfo(strFileName, codec_info,
+                                                                videoStream, hasVideoStream);
     if (!codec.empty())
       tag.SetCodec(codec);
   
@@ -1540,6 +1548,11 @@ bool CTagLoaderTagLib::Load(const std::string& strFileName, CMusicInfoTag& tag, 
       tag.SetBitsPerSample(codec_info.bitsPerSample);
       tag.SetCodec(codec_info.codecName);
       tag.SetNoOfChannels(codec_info.channels);
+      if (hasVideoStream)
+      {
+        tag.SetVideoStream(videoStream);
+        tag.SetHasVideoStream(true);
+      }
     }
   }
   catch (const std::exception& ex)
