@@ -26,6 +26,7 @@
 #include "guilib/guiinfo/GUIInfoHelper.h"
 #include "guilib/guiinfo/GUIInfoLabels.h"
 #include "guilib/guiinfo/GUIInfoUtils.h"
+#include "guilib/guiinfo/MusicChannelsHelper.h"
 #include "network/NetworkFileItemClassify.h"
 #include "playlists/PlayList.h"
 #include "resources/LocalizeStrings.h"
@@ -688,6 +689,20 @@ bool CVideoGUIInfo::GetLabel(std::string& value,
         return true;
       }
       break;
+    }
+    case VIDEOPLAYER_MUSIC_CHANNELS_STRING:
+    {
+      // VideoPlayer.MusicChannelsString — same shared label as
+      // ListItem.MusicChannelsString / MusicPlayer.MusicChannelsString,
+      // sourced from VideoPlayer's currently-active audio stream
+      // (m_audioInfo) and the playing file's path. Lets skins use one
+      // label name regardless of which player is driving playback —
+      // important for concert MKVs that route through VideoPlayer and
+      // for audio-only-via-VideoPlayer where the user still sees the
+      // music-style InfoLabels.
+      value = MakeMusicChannelsString(m_audioInfo.codecName, m_audioInfo.channels,
+                                      item ? item->GetPath() : std::string{});
+      return true;
     }
     case VIDEOPLAYER_AUDIO_BITRATE:
     {

@@ -2973,7 +2973,7 @@ constexpr std::array<InfoMap, 7> musicpartymode = {{
 ///
 /// -----------------------------------------------------------------------------
 // clang-format off
-constexpr std::array<InfoMap, 52> musicplayer = {{
+constexpr std::array<InfoMap, 53> musicplayer = {{
     {"title",               MUSICPLAYER_TITLE},
     {"album",               MUSICPLAYER_ALBUM},
     {"artist",              MUSICPLAYER_ARTIST},
@@ -3026,6 +3026,7 @@ constexpr std::array<InfoMap, 52> musicplayer = {{
     {"videoheight",         MUSICPLAYER_VIDEO_HEIGHT},
     {"videoresolution",     MUSICPLAYER_VIDEO_RESOLUTION},
     {"hdrtype",             MUSICPLAYER_HDR_TYPE},
+    {"musicchannelsstring", MUSICPLAYER_MUSIC_CHANNELS_STRING},
 }};
 // clang-format on
 
@@ -4219,7 +4220,7 @@ constexpr std::array<InfoMap, 52> musicplayer = {{
 /// -----------------------------------------------------------------------------
 // clang-format off
 
-constexpr std::array<InfoMap, 87> videoplayer = {{
+constexpr std::array<InfoMap, 88> videoplayer = {{
     {"title",                 VIDEOPLAYER_TITLE},
     {"genre",                 VIDEOPLAYER_GENRE},
     {"country",               VIDEOPLAYER_COUNTRY},
@@ -4307,6 +4308,7 @@ constexpr std::array<InfoMap, 87> videoplayer = {{
     { "chapterlength",        VIDEOPLAYER_CHAPTERLENGTH},
     { "chapterelapsed",       PLAYER_CHAPTER_ELAPSED},
     { "ismusicvideo",         VIDEOPLAYER_IS_MUSIC_VIDEO},
+    { "musicchannelsstring",  VIDEOPLAYER_MUSIC_CHANNELS_STRING},
 }};
 
 // clang-format on

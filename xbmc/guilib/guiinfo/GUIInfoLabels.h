@@ -435,6 +435,16 @@ constexpr uint32_t MUSICPLAYER_VIDEO_HEIGHT          = 407;
 constexpr uint32_t MUSICPLAYER_VIDEO_RESOLUTION      = 408;
 constexpr uint32_t MUSICPLAYER_HDR_TYPE              = 409;
 
+// Music-channel-layout label, shared resolution rule (see
+// MusicChannelsHelper.h). Available in three namespaces so skins can
+// use the same label name regardless of which player is active:
+//   ListItem.MusicChannelsString     (library browsers — already wired)
+//   MusicPlayer.MusicChannelsString  (PaPlayer now-playing)
+//   VideoPlayer.MusicChannelsString  (VideoPlayer now-playing — concert MKVs
+//                                     or audio-via-VideoPlayer)
+constexpr uint32_t MUSICPLAYER_MUSIC_CHANNELS_STRING = 415;
+constexpr uint32_t VIDEOPLAYER_MUSIC_CHANNELS_STRING = 416;
+
 constexpr uint32_t PLAYLIST_LENGTH                   = 400;
 constexpr uint32_t PLAYLIST_POSITION                 = 401;
 constexpr uint32_t PLAYLIST_RANDOM                   = 402;
