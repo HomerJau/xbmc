@@ -1,0 +1,25 @@
+--- a/taglib/matroska/ebml/ebmlmkinfo.cpp
++++ b/taglib/matroska/ebml/ebmlmkinfo.cpp
+@@ -24,6 +24,8 @@
+
+ #include "ebmlmkinfo.h"
+ #include "ebmlstringelement.h"
++
++#include <limits>
+ #include "ebmluintelement.h"
+ #include "ebmlfloatelement.h"
+ #include "matroskaproperties.h"
+@@ -66,8 +68,12 @@
+     }
+   }
+
+-  properties->setLengthInMilliseconds(
+-    static_cast<int>(duration * static_cast<double>(timestampScale) / 1000000.0));
++  // Guard against int overflow when a muxer writes Duration in nanoseconds
++  // instead of TimestampScale units (common with Blu-Ray-to-MKV converters).
++  const double lengthMs = duration * static_cast<double>(timestampScale) / 1000000.0;
++  properties->setLengthInMilliseconds(
++    lengthMs >= 0.0 && lengthMs <= static_cast<double>(std::numeric_limits<int>::max())
++    ? static_cast<int>(lengthMs) : 0);
+   properties->setTitle(title);
+ }
