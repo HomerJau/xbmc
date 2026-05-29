@@ -608,7 +608,19 @@ CInfoScanner::InfoRet CMusicInfoScanner::ScanTags(const CFileItemList& items,
     // skip, but without this check ScanTags would still reuse cached tag
     // state on a per-file basis, defeating "Do full tag scan even when
     // unchanged".
-    if (!tag.Loaded() || (m_flags & SCAN_RESCAN))
+    //
+    // QQ Kodi: do NOT re-read items that are time-sliced chapter expansions of
+    // a container file (chaptered Matroska .mka/.mkv/.webm, or .m4b audiobooks).
+    // These arrive already expanded by CAudioBookFileDirectory, each carrying
+    // authoritative per-chapter tags and a non-zero start/end offset. The
+    // per-file tag loader can only read the whole file (chapter[0]) with the
+    // full-album duration, so re-reading collapses every chapter into a single
+    // track of full length. The file itself is re-parsed fresh on every scan by
+    // the audiobook directory expansion, so skipping the per-file re-read loses
+    // nothing on a forced rescan. (Beta cohort regression: force-scan turned
+    // chaptered MKA/MKV albums into one track of full-album length.)
+    const bool bContainerSlice = pItem->GetEndOffset() > 0;
+    if ((!tag.Loaded() || (m_flags & SCAN_RESCAN)) && !bContainerSlice)
     {
       std::unique_ptr<IMusicInfoTagLoader> pLoader (CMusicInfoTagLoaderFactory::CreateLoader(*pItem));
       if (nullptr != pLoader)
