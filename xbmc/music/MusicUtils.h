@@ -128,4 +128,17 @@ bool GetItemsForPlayList(const std::shared_ptr<CFileItem>& item, CFileItemList& 
  */
 bool IsItemPlayable(const CFileItem& item);
 
+/*!
+ \brief Map a (codec, channel count) pair to a friendly channel-layout label.
+ Codec-based labels (Atmos, DTS:X) take precedence over the raw channel count; for
+ everything else the channel count drives the label (Mono/Stereo/Quad/5.1/...). Returns an
+ empty string when no sensible mapping applies. Shared by the ListItem.MusicChannelsString
+ InfoLabel and the scanner, which materialises the result into song.strChannelLayout so QQ
+ album nodes can filter on the canonical layout with a single rule.
+ \param codec the codec string (e.g. "truehd_atmos", "flac")
+ \param channels the channel count
+ \return the layout label, or empty string
+ */
+std::string GetMusicChannelsLayoutLabel(const std::string& codec, int channels);
+
 } // namespace MUSIC_UTILS

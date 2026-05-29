@@ -43,6 +43,7 @@
 #include "messaging/helpers/DialogOKHelper.h"
 #include "music/MusicDbUrl.h"
 #include "music/MusicLibraryQueue.h"
+#include "music/MusicUtils.h"
 #include "music/tags/MusicInfoTag.h"
 #include "network/Network.h"
 #include "resources/LocalizeStrings.h"
@@ -218,7 +219,8 @@ void CMusicDatabase::CreateTables()
               " strCodec TEXT, iChannels INTEGER NOT NULL DEFAULT 0, "
               " strVideoURL TEXT, "
               " strReplayGain text, "
-              " dateAdded TEXT, dateNew TEXT, dateModified TEXT)");
+              " dateAdded TEXT, dateNew TEXT, dateModified TEXT, "
+              " strChannelLayout TEXT)"); // QQ: appended last to match ALTER ADD on upgrades
   CLog::Log(LOGINFO, "create song_artist table");
   m_pDS->exec("CREATE TABLE song_artist (idArtist integer, idSong integer, idRole integer, iOrder "
               "integer, strArtist text)");
@@ -1146,11 +1148,16 @@ int CMusicDatabase::AddSong(const int idSong,
       // Get dateAdded from music file timestamp
       std::string strDateMedia = GetMediaDateFromFile(strPathAndFileName);
 
+      // QQ: materialised channel-layout label, derived from codec + channel count, so album
+      // nodes can filter on the canonical layout (Atmos/5.1/Stereo/...) with a single rule.
+      const std::string strChannelLayout =
+          MUSIC_UTILS::GetMusicChannelsLayoutLabel(strCodec, iChannels);
+
       strSQL = "INSERT INTO song ("
                "idSong, dateNew, idAlbum, idPath, strArtistDisp, "
                "strTitle, iTrack, iDuration, "
                "strReleaseDate, strOrigReleaseDate, iBPM, "
-               "iBitrate, iSampleRate, iChannels, iBitsPerSample, strCodec, "
+               "iBitrate, iSampleRate, iChannels, iBitsPerSample, strCodec, strChannelLayout, "
                "strDiscSubtitle, strFileName, dateAdded,  "
                "strMusicBrainzTrackID, strArtistSort, "
                "iTimesPlayed, iStartOffset, iEndOffset, "
@@ -1164,11 +1171,12 @@ int CMusicDatabase::AddSong(const int idSong,
         strSQL += PrepareSQL("VALUES (%i, '%s', ", idSong, dtDateNew.GetAsDBDateTime().c_str());
 
       strSQL += PrepareSQL(
-          "%i, %i, '%s', '%s', %i, %i, '%s', '%s', %i, %i, %i, %i, %i, '%s', '%s', '%s', '%s' ",
+          "%i, %i, '%s', '%s', %i, %i, '%s', '%s', %i, %i, %i, %i, %i, '%s', '%s', '%s', '%s', "
+          "'%s' ",
           idAlbum, idPath, artistDisp.c_str(), strTitle.c_str(), iTrack, iDuration,
           strRelease.c_str(), strOriginal.c_str(), iBPM, iBitRate, iSampleRate, iChannels,
-          iBitsPerSample, strCodec.c_str(), strDiscSubtitle.c_str(), strFileName.c_str(),
-          strDateMedia.c_str());
+          iBitsPerSample, strCodec.c_str(), strChannelLayout.c_str(), strDiscSubtitle.c_str(),
+          strFileName.c_str(), strDateMedia.c_str());
 
       if (strMusicBrainzTrackID.empty())
         strSQL += PrepareSQL(",NULL");
@@ -1393,13 +1401,18 @@ int CMusicDatabase::UpdateSong(int idSong,
 
   std::string strDateMedia = GetMediaDateFromFile(strPathAndFileName);
 
+  // QQ: keep the materialised channel-layout label in sync on every song update.
+  const std::string strChannelLayout =
+      MUSIC_UTILS::GetMusicChannelsLayoutLabel(strCodec, iChannels);
+
   strSQL = PrepareSQL(
       "UPDATE song SET idPath = %i, strArtistDisp = '%s', strGenres = '%s', "
       " strTitle = '%s', iTrack = %i, iDuration = %i, "
       "strReleaseDate = '%s', strOrigReleaseDate = '%s', strDiscSubtitle = '%s', "
       "strFileName = '%s', iBPM = %i, iBitrate = %i, iSampleRate = %i, iChannels = %i, "
 
-      "iBitsPerSample = %i, strCodec = '%s', strVideoURL = '%s', dateAdded = '%s'",
+      "iBitsPerSample = %i, strCodec = '%s', strChannelLayout = '%s', strVideoURL = '%s', "
+      "dateAdded = '%s'",
       idPath, artistDisp.c_str(),
       StringUtils::Join(
           genres,
@@ -1407,7 +1420,7 @@ int CMusicDatabase::UpdateSong(int idSong,
           .c_str(),
       strTitle.c_str(), iTrack, iDuration, strRelease.c_str(), strOriginal.c_str(),
       strDiscSubtitle.c_str(), strFileName.c_str(), iBPM, iBitRate, iSampleRate, iChannels,
-      iBitsPerSample, strCodec.c_str(), songVideoURL.c_str(),
+      iBitsPerSample, strCodec.c_str(), strChannelLayout.c_str(), songVideoURL.c_str(),
       strDateMedia.c_str());
   if (strMusicBrainzTrackID.empty())
     strSQL += PrepareSQL(", strMusicBrainzTrackID = NULL");
@@ -9420,6 +9433,16 @@ void CMusicDatabase::UpdateTables(int version)
   if (version < 85) // upstream PR #28140 renamed the DTS codec from 'dca' to 'dts'
     m_pDS->exec("UPDATE song SET strCodec = 'dts' WHERE strCodec = 'dca'");
 
+  if (version < 86)
+  {
+    // QQ: materialised channel-layout label for willy-nilly album nodes. Derived from the
+    // existing strCodec/iChannels columns (present since v84), so this needs NO tag re-read —
+    // the QQ preset's forced rescan on upgrade repopulates it via AddSong.
+    // NOTE: the albumvideoresolution feature (other Beta 8 work) adds its ALTER to this same
+    // v86 block — keep both here rather than introducing a separate bump.
+    m_pDS->exec("ALTER TABLE song ADD strChannelLayout TEXT");
+  }
+
   // Set the version of tag scanning required.
   // Not every schema change requires the tags to be rescanned, set to the highest schema version
   // that needs this. Forced rescanning (of music files that have not changed since they were
@@ -9440,7 +9463,7 @@ void CMusicDatabase::UpdateTables(int version)
 
 int CMusicDatabase::GetSchemaVersion() const
 {
-  return 85;
+  return 86;
 }
 
 int CMusicDatabase::GetMusicNeedsTagScan()

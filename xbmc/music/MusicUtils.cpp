@@ -971,4 +971,36 @@ bool IsItemPlayable(const CFileItem& item)
   return false;
 }
 
+std::string GetMusicChannelsLayoutLabel(const std::string& codec, int channels)
+{
+  if (codec == "eac3_ddp_atmos" || codec == "truehd_atmos")
+    return "Atmos";
+  if (codec == "dtshd_ma_x")
+    return "DTS:X";
+  switch (channels)
+  {
+    case 1:
+      return "Mono";
+    case 2:
+      return "Stereo";
+    case 3:
+      return "3.0";
+    case 4:
+      return "Quad";
+    case 5:
+      return "5.0";
+    case 6:
+      return "5.1";
+    case 7:
+      return "6.1";
+    case 8:
+      return "7.1";
+    default:
+      break;
+  }
+  if (channels >= 9)
+    return StringUtils::Format("{}.0", channels);
+  return {};
+}
+
 } // namespace MUSIC_UTILS

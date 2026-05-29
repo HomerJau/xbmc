@@ -146,6 +146,7 @@ static const auto fields = std::array{
   TranslateField{ "hdrdetail",         Field::HDR_DETAIL,                 TEXTIN_FIELD,   nullptr,                              false, 20478 },
   TranslateField{ "albumcodec",        Field::ALBUM_CODEC,                TEXT_FIELD,     nullptr,                              true,  21446 },
   TranslateField{ "bitspersample",     Field::BITS_PER_SAMPLE,            TEXT_FIELD,     nullptr,                              true,  612 },
+  TranslateField{ "channellayout",     Field::CHANNEL_LAYOUT,             TEXT_FIELD,     nullptr,                              true,  253 },
   TranslateField{ "ismusicconcert",    Field::IS_MUSIC_CONCERT,           BOOLEAN_FIELD,  nullptr,                              false, 21486},
   TranslateField{ "isaudiobook",       Field::IS_AUDIOBOOK,               BOOLEAN_FIELD,  nullptr,                              false, 21487},
 };
@@ -973,6 +974,10 @@ std::string CSmartPlaylistRule::FormatWhereClause(const std::string& negate,
       query = negate + " EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
               GetField(static_cast<int>(Field::ID), strType) +
               " AND song.iChannels " + parameter + ")";
+    else if (m_field == static_cast<int>(Field::CHANNEL_LAYOUT))
+      query = negate + " EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
+              GetField(static_cast<int>(Field::ID), strType) +
+              " AND song.strChannelLayout " + parameter + ")";
     else if (m_field == static_cast<int>(Field::YEAR) ||
              m_field == static_cast<int>(Field::ORIG_YEAR))
     {
