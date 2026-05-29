@@ -959,20 +959,19 @@ std::string CSmartPlaylistRule::FormatWhereClause(const std::string& negate,
               " AND album_source.idSource = source.idSource AND source.strName" + parameter + ")";
     else if (m_field == static_cast<int>(Field::DISC_TITLE))
       query = negate + " EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
-              " EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
               GetField(static_cast<int>(Field::ID), strType) + " AND song.strDiscSubtitle" +
               parameter + ")";
-    else if (m_field == static_cast<int>(Field ::ALBUM_CODEC))
+    else if (m_field == static_cast<int>(Field::ALBUM_CODEC))
       query = negate + " EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
-              GetField(static_cast<int>(Field::ALBUM_CODEC), strType) + " AND song.strCodec " +
+              GetField(static_cast<int>(Field::ID), strType) + " AND song.strCodec " +
               parameter + ")";
     else if (m_field == static_cast<int>(Field::BITS_PER_SAMPLE))
       query = negate + " EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
-              GetField(static_cast<int>(Field::BITS_PER_SAMPLE), strType) +
+              GetField(static_cast<int>(Field::ID), strType) +
               " AND song.iBitsPerSample " + parameter + ")";
     else if (m_field == static_cast<int>(Field::NUMBER_OF_CHANNELS))
-      query = negate + "EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
-              GetField(static_cast<int>(Field::NUMBER_OF_CHANNELS), strType) +
+      query = negate + " EXISTS (SELECT 1 FROM song WHERE song.idAlbum = " +
+              GetField(static_cast<int>(Field::ID), strType) +
               " AND song.iChannels " + parameter + ")";
     else if (m_field == static_cast<int>(Field::YEAR) ||
              m_field == static_cast<int>(Field::ORIG_YEAR))
