@@ -23,6 +23,7 @@
 #include "guilib/guiinfo/GUIInfoUtils.h"
 #include "music/MusicFileItemClassify.h"
 #include "music/MusicInfoLoader.h"
+#include "music/MusicUtils.h"
 #include "music/MusicThumbLoader.h"
 #include "music/tags/MusicInfoTag.h"
 #include "network/NetworkFileItemClassify.h"
@@ -39,43 +40,6 @@ using namespace KODI;
 using namespace KODI::GUILIB;
 using namespace KODI::GUILIB::GUIINFO;
 using namespace MUSIC_INFO;
-
-namespace
-{
-/*!
- * Map (codec, channel count) to a friendly channel-layout label for skins.
- * Codec-based labels (Atmos, DTS:X) take precedence over raw channel count;
- * for everything else the channel count drives the label. Returns an empty
- * string when no sensible mapping applies — skins can then fall back to
- * the raw codec name or channel count if desired.
- *
- * Collection-specific overrides (e.g. 6ch files that are really Quad with
- * silent rears, filename-hint upmix tags) remain skin-side: those are
- * user-collection conventions, not universally correct heuristics.
- */
-std::string MakeMusicChannelsString(const std::string& codec, int channels)
-{
-  if (codec == "eac3_ddp_atmos" || codec == "truehd_atmos")
-    return "Atmos";
-  if (codec == "dtshd_ma_x")
-    return "DTS:X";
-  switch (channels)
-  {
-    case 1: return "Mono";
-    case 2: return "Stereo";
-    case 3: return "3.0";
-    case 4: return "Quad";
-    case 5: return "5.0";
-    case 6: return "5.1";
-    case 7: return "6.1";
-    case 8: return "7.1";
-    default: break;
-  }
-  if (channels >= 9)
-    return StringUtils::Format("{}.0", channels);
-  return {};
-}
-} // namespace
 
 bool CMusicGUIInfo::InitCurrentItem(CFileItem* item)
 {
@@ -426,7 +390,7 @@ bool CMusicGUIInfo::GetLabel(std::string& value,
         return true;
 
       case LISTITEM_MUSIC_CHANNELS_STRING:
-        value = MakeMusicChannelsString(tag->GetCodec(), tag->GetNoOfChannels());
+        value = MUSIC_UTILS::GetMusicChannelsLayoutLabel(tag->GetCodec(), tag->GetNoOfChannels());
         return true;
 
       case LISTITEM_ALBUMSTATUS:
