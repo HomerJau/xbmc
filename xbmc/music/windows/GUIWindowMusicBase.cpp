@@ -908,40 +908,13 @@ bool CGUIWindowMusicBase::CanContainFilter(const std::string &strDirectory) cons
 
 bool CGUIWindowMusicBase::OnSelect(int iItem)
 {
-  auto item = m_vecItems->Get(iItem);
-  if (MUSIC::IsAudioBook(*item))
-  {
-    int bookmark;
-    if (m_musicdatabase.GetResumeBookmarkForAudioBook(*item, bookmark) && bookmark > 0)
-    {
-      // find which chapter the bookmark belongs to
-      auto itemIt =
-          std::find_if(m_vecItems->cbegin(), m_vecItems->cend(),
-                       [&](const CFileItemPtr& item) { return bookmark < item->GetEndOffset(); });
-
-      if (itemIt != m_vecItems->cend())
-      {
-        // ask the user if they want to play or resume
-        CContextButtons choices;
-        choices.Add(MUSIC_SELECT_ACTION_PLAY, 208); // 208 = Play
-        choices.Add(
-            MUSIC_SELECT_ACTION_RESUME,
-            StringUtils::Format(CServiceBroker::GetResourcesComponent().GetLocalizeStrings().Get(
-                                    12022), // 12022 = Resume from ...
-                                (*itemIt)->GetMusicInfoTag()->GetTitle()));
-
-        auto choice = CGUIDialogContextMenu::Show(choices);
-        if (choice == MUSIC_SELECT_ACTION_RESUME)
-        {
-          (*itemIt)->SetProperty("audiobook_bookmark", bookmark);
-          return CGUIMediaWindow::OnSelect(static_cast<int>(itemIt - m_vecItems->cbegin()));
-        }
-        else if (choice < 0)
-          return true;
-      }
-    }
-  }
-
+  // QQ: the upstream audiobook "Play / Resume from chapter" prompt was removed here.
+  // The QQ music library is chaptered Matroska albums, not spoken-word audiobooks, so the
+  // resume prompt was just an unwanted nag on every play of a chaptered file — reported by
+  // multiple beta testers. It is a hardcoded prompt with no setting gate, which is why the
+  // VideoPlayer "Play from beginning" option never suppressed it. Always play from the
+  // start; the upstream resume logic remains in git history if real-audiobook resume is
+  // ever wanted.
   return CGUIMediaWindow::OnSelect(iItem);
 }
 
