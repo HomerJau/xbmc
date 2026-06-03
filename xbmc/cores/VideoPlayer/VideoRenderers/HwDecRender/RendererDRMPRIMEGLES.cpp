@@ -230,13 +230,10 @@ bool CRendererDRMPRIMEGLES::Configure(const VideoPicture& picture,
     }
   }
 
-  if (picture.color_transfer == AVCOL_TRC_SMPTE2084 ||
-      picture.color_transfer == AVCOL_TRC_ARIB_STD_B67)
-  {
-    m_passthroughHDR = winSystem->SetHDR(&picture);
-    CLog::Log(LOGDEBUG, "RendererDRMPRIMEGLES::Configure: HDR passthrough: {}",
-              m_passthroughHDR ? "on" : "off");
-  }
+  winSystem->SetColorimetry(&picture);
+  m_passthroughHDR = winSystem->SetHDR(&picture);
+  CLog::Log(LOGDEBUG, "RendererDRMPRIMEGLES::Configure: HDR passthrough: {}",
+            m_passthroughHDR ? "on" : "off");
 
   m_hdrFboActive = m_passthroughHDR && winSystem->SetGuiCompositing(picture.color_transfer);
   if (m_passthroughHDR && !m_hdrFboActive)
@@ -261,6 +258,7 @@ void CRendererDRMPRIMEGLES::UnInit()
     CServiceBroker::GetWinSystem()->SetGuiCompositing(false);
     CServiceBroker::GetWinSystem()->SetHDR(nullptr);
     m_passthroughHDR = false;
+    CServiceBroker::GetWinSystem()->SetColorimetry(nullptr);
     CServiceBroker::GetWinSystem()->SetVideoOutput(nullptr);
   }
 
